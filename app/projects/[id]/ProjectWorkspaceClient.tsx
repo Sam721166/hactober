@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { CircuitStudioCanvas } from "@/components/circuits/CircuitStudioCanvas";
+import { FirmwareIDE } from "@/components/firmware/FirmwareIDE";
 import { extractPinsFromCode, ExtractedPin } from "@/lib/analysis/firmware";
 import {
   FolderKanban,
@@ -262,75 +263,26 @@ export function ProjectWorkspaceClient({ id }: { id: string }) {
 
         {/* Tab 3: Firmware IDE */}
         {activeTab === "firmware" && (
-          <div className="h-full flex flex-col md:flex-row overflow-hidden">
-            {/* Editor Area */}
-            <div className="flex-1 flex flex-col border-r border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              <div className="flex h-10 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 text-xs shrink-0 font-mono">
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  main.ino
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(firmwareCode);
-                      setCopiedCode(true);
-                      setTimeout(() => setCopiedCode(false), 2000);
-                    }}
-                    className="flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
-                  >
-                    {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedCode ? "Copied" : "Copy"}</span>
-                  </button>
-                  <button
-                    onClick={handleSaveFirmware}
-                    disabled={isSavingFw}
-                    className="flex items-center gap-1 rounded bg-zinc-900 px-2.5 py-1 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white font-semibold text-[11px]"
-                  >
-                    <Save className="h-3.5 w-3.5" />
-                    <span>{isSavingFw ? "Saving..." : "Save Code"}</span>
-                  </button>
-                </div>
-              </div>
-
-              <textarea
-                value={firmwareCode}
-                onChange={(e) => {
-                  setFirmwareCode(e.target.value);
-                  setExtractedPins(extractPinsFromCode(e.target.value));
-                }}
-                className="flex-1 w-full p-4 font-mono text-xs bg-zinc-950 text-zinc-100 resize-none focus:outline-none leading-relaxed"
-                spellCheck={false}
-              />
-            </div>
-
-            {/* Right Pane: Extracted Pins & Static Analysis */}
-            <div className="w-80 border-t md:border-t-0 md:border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 overflow-y-auto shrink-0 text-xs space-y-3">
-              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                Extracted Pin References ({extractedPins.length})
-              </span>
-              <p className="text-[11px] text-zinc-500">
-                Deterministic regex pattern analysis of active GPIOs and peripheral calls.
-              </p>
-
-              <div className="space-y-2 mt-2">
-                {extractedPins.map((p, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-2.5 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-800/40"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-zinc-900 dark:text-zinc-100">Pin {p.pin}</span>
-                      <span className="text-[10px] text-zinc-400">
-                        Line {p.lineNumbers.join(", ")}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[10px] text-zinc-600 dark:text-zinc-400">
-                      Ops: {p.operations.join(" • ")}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="h-full w-full overflow-hidden">
+            <FirmwareIDE
+              projectId={project.id}
+              projectName={project.title}
+              initialCode={firmwareCode}
+              circuitConnections={project.circuit?.connections || []}
+              onSave={async (filename, content) => {
+                setFirmwareCode(content);
+                const res = await fetch(`/api/projects/${id}/firmware`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ filename, content }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  setExtractedPins(data.extractedPins || extractPinsFromCode(content));
+                }
+              }}
+              onSwitchToCircuitTab={() => setActiveTab("circuit")}
+            />
           </div>
         )}
 

@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { extractPinsFromCode } from "../lib/analysis/firmware";
+import {
+  extractPinsFromCode,
+  analyzeFirmware,
+  generatePinHeader,
+  generatePlatformIoIni,
+} from "../lib/analysis/firmware";
 import { COMPONENT_DEFINITIONS } from "../lib/circuits/registry";
 import {
   initDb,
@@ -61,6 +66,49 @@ async function runTestSuite() {
     const pin9 = pins.find((p) => p.pin === "9");
     assert.ok(pin9, "Should detect pin 9");
     assert.ok(pin9.operations.includes("analogWrite(PWM)"), "Should record PWM");
+  });
+
+  // 1b. Advanced Firmware Static Linter & Analysis
+  await test("Firmware static analysis detects baud rate, blocking delays, and generates headers", () => {
+    const sketch = `
+      #include <Wire.h>
+      #include <WiFi.h>
+      #define SENSOR_PIN 4
+
+      void setup() {
+        Serial.begin(115200);
+        Wire.begin();
+        pinMode(SENSOR_PIN, INPUT);
+      }
+
+      void loop() {
+        int v = digitalRead(SENSOR_PIN);
+        delay(1000); // Blocking delay
+      }
+    `;
+
+    const analysis = analyzeFirmware(sketch);
+    assert.strictEqual(analysis.baudRate, 115200, "Should detect 115200 baud rate");
+    assert.strictEqual(analysis.blockingDelays.length, 1, "Should flag blocking delay");
+    assert.strictEqual(analysis.blockingDelays[0].durationMs, 1000, "Should identify 1000ms delay");
+    assert.ok(analysis.detectedLibraries.includes("Wire.h"), "Should detect Wire.h include");
+    assert.ok(analysis.detectedLibraries.includes("WiFi.h"), "Should detect WiFi.h include");
+    assert.strictEqual(analysis.stats.hasSetup, true, "Should confirm setup()");
+    assert.strictEqual(analysis.stats.hasLoop, true, "Should confirm loop()");
+
+    // Test pin header generator
+    const fakeConnections = [
+      { sourcePin: "D4", sourceComponentId: "esp32", targetPin: "DATA", targetComponentId: "dht22" },
+      { sourcePin: "3V3", sourceComponentId: "esp32", targetPin: "VCC", targetComponentId: "dht22" }
+    ];
+    const header = generatePinHeader(fakeConnections);
+    assert.ok(header.includes("PIN_ESP32_DATA") || header.includes("PIN_DHT22"), "Header should format pin macros");
+    assert.strictEqual(header.includes("3V3"), false, "Header should exclude power rails");
+
+    // Test platformio.ini generator
+    const pioIni = generatePlatformIoIni("esp32", 115200);
+    assert.ok(pioIni.includes("[env:esp32dev]"), "Should generate ESP32 environment");
+    assert.ok(pioIni.includes("monitor_speed = 115200"), "Should set telemetry baud");
   });
 
   // 2. Circuit Component Definitions

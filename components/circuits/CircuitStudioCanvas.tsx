@@ -257,6 +257,12 @@ export function CircuitStudioCanvas({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings">("library");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [showLegend, setShowLegend] = useState(false);
   const reactFlowInstance = useRef<any>(null);
 
@@ -1017,6 +1023,17 @@ export function CircuitStudioCanvas({
 
     return warnings;
   }, [nodes, edges]);
+
+  if (!mounted) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-zinc-50 dark:bg-zinc-950 font-mono text-xs text-zinc-400">
+        <span className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-cyan-500 animate-ping" />
+          Initializing Circuit Canvas...
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
