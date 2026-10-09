@@ -169,15 +169,19 @@ function ProjectBuilderContent() {
               <button
                 onClick={handleSaveProject}
                 disabled={isSaving}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-xs transition-all ${
+                  savedProjectId
+                    ? "border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                }`}
               >
-                <Save className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
+                <Save className={`h-3.5 w-3.5 ${savedProjectId ? "text-emerald-600" : "text-zinc-600 dark:text-zinc-400"}`} />
                 <span>{savedProjectId ? "Saved" : isSaving ? "Saving..." : "Save to Workspaces"}</span>
               </button>
 
               <button
                 onClick={handleOpenInStudio}
-                className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all"
+                className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-sky-400/30"
               >
                 <Cpu className="h-3.5 w-3.5" />
                 <span>Open in Circuit Studio</span>
@@ -288,16 +292,16 @@ function ProjectBuilderContent() {
               <button
                 type="submit"
                 disabled={!idea.trim() || isGenerating}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-zinc-900 py-2.5 font-semibold text-white shadow-xs hover:bg-zinc-800 disabled:opacity-50 transition-all text-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-zinc-950 via-zinc-900 to-violet-950 hover:to-violet-900 py-2.5 font-semibold text-white shadow-xs disabled:opacity-50 transition-all text-xs ring-1 ring-violet-500/30"
               >
                 {isGenerating ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
                     <span>Architecting Circuit...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className="h-4 w-4 text-violet-300" />
                     <span>Generate Project Plan</span>
                   </>
                 )}
@@ -396,7 +400,7 @@ function ProjectBuilderContent() {
                       </div>
                       <button
                         onClick={handleOpenInStudio}
-                        className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all self-start sm:self-auto"
+                        className="flex items-center gap-1.5 rounded-md bg-sky-600 hover:bg-sky-500 px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition-all self-start sm:self-auto"
                       >
                         <ExternalLink className="h-3 w-3" />
                         <span>Full Studio Canvas</span>
@@ -509,7 +513,11 @@ function ProjectBuilderContent() {
                       </span>
                       <button
                         onClick={handleCopyCode}
-                        className="flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-mono hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors"
+                        className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-mono transition-colors border ${
+                          copiedCode
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 font-semibold"
+                            : "border-zinc-300 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
+                        }`}
                       >
                         {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-zinc-500" />}
                         <span>{copiedCode ? "Copied" : "Copy Code"}</span>

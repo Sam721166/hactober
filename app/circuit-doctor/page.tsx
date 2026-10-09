@@ -156,9 +156,13 @@ export default function CircuitDoctorPage() {
           {analysis && (
             <button
               onClick={handleSaveSession}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 transition-all"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-xs transition-all ${
+                savedSessionId
+                  ? "border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                  : "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+              }`}
             >
-              <Save className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
+              <Save className={`h-3.5 w-3.5 ${savedSessionId ? "text-emerald-600" : "text-zinc-600 dark:text-zinc-400"}`} />
               <span>{savedSessionId ? "Saved (#" + savedSessionId.slice(-4) + ")" : "Save Investigation"}</span>
             </button>
           )}
@@ -304,7 +308,7 @@ export default function CircuitDoctorPage() {
               <button
                 onClick={handleAnalyze}
                 disabled={!selectedImage || isAnalyzing}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-zinc-900 py-2.5 font-semibold text-white shadow-xs hover:bg-zinc-800 disabled:opacity-50 transition-all text-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-rose-600 hover:bg-rose-500 py-2.5 font-semibold text-white shadow-xs hover:shadow-rose-600/20 disabled:opacity-50 disabled:bg-zinc-800 transition-all text-xs ring-1 ring-rose-400/40"
               >
                 {isAnalyzing ? (
                   <>
@@ -313,7 +317,7 @@ export default function CircuitDoctorPage() {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className="h-4 w-4 text-rose-200" />
                     <span>Run Circuit Doctor Diagnostics</span>
                   </>
                 )}
@@ -338,7 +342,7 @@ export default function CircuitDoctorPage() {
                 {/* Summary Banner */}
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3.5 text-xs dark:border-zinc-800 dark:bg-zinc-800/40">
                   <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold font-mono">
-                    <Activity className="h-4 w-4" />
+                    <Activity className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                     <span>Diagnostic Overview</span>
                   </div>
                   <p className="mt-1.5 leading-relaxed text-zinc-700 dark:text-zinc-300">
@@ -348,11 +352,11 @@ export default function CircuitDoctorPage() {
 
                 {/* Safety Warning if present */}
                 {analysis.safetyWarnings && analysis.safetyWarnings.length > 0 && (
-                  <div className="flex items-start gap-2.5 rounded-lg border border-rose-300 bg-rose-50/80 p-3.5 text-xs text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                    <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                  <div className="flex items-start gap-2.5 rounded-lg border-2 border-rose-400 bg-rose-50 p-3.5 text-xs text-rose-950 dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-200 shadow-xs">
+                    <ShieldAlert className="h-4.5 w-4.5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5 animate-bounce" />
                     <div>
-                      <span className="font-bold">Hardware Safety Precaution:</span>
-                      <p className="mt-0.5 text-rose-800 dark:text-rose-300">{analysis.safetyWarnings[0]}</p>
+                      <span className="font-bold uppercase tracking-wider text-[11px] text-rose-700 dark:text-rose-300">⚠️ Hardware Safety Precaution:</span>
+                      <p className="mt-0.5 text-rose-900 dark:text-rose-200 font-medium leading-relaxed">{analysis.safetyWarnings[0]}</p>
                     </div>
                   </div>
                 )}
