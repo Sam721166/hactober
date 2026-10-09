@@ -348,11 +348,11 @@ export default function CircuitDoctorPage() {
 
                 {/* Safety Warning if present */}
                 {analysis.safetyWarnings && analysis.safetyWarnings.length > 0 && (
-                  <div className="flex items-start gap-2.5 rounded-lg border border-zinc-300 bg-zinc-100/70 p-3 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100">
-                    <ShieldAlert className="h-4 w-4 shrink-0 text-zinc-900 dark:text-zinc-100 mt-0.5" />
+                  <div className="flex items-start gap-2.5 rounded-lg border border-rose-300 bg-rose-50/80 p-3.5 text-xs text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
                     <div>
                       <span className="font-bold">Hardware Safety Precaution:</span>
-                      <p className="mt-0.5 text-zinc-600 dark:text-zinc-300">{analysis.safetyWarnings[0]}</p>
+                      <p className="mt-0.5 text-rose-800 dark:text-rose-300">{analysis.safetyWarnings[0]}</p>
                     </div>
                   </div>
                 )}
@@ -395,7 +395,15 @@ export default function CircuitDoctorPage() {
                             <span className="font-bold text-xs text-zinc-950 dark:text-zinc-100 font-mono">
                               {fault.title}
                             </span>
-                            <span className="rounded border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            <span
+                              className={`rounded border px-2 py-0.5 text-[10px] font-mono font-semibold ${
+                                fault.confidence === "High"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-400"
+                                  : fault.confidence === "Medium"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400"
+                                  : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400"
+                              }`}
+                            >
                               {fault.confidence} Confidence
                             </span>
                           </div>
@@ -406,18 +414,18 @@ export default function CircuitDoctorPage() {
 
                           <div className="rounded-lg bg-white p-3 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 space-y-2 font-mono text-[11px]">
                             <div>
-                              <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
+                              <span className="text-sky-700 dark:text-sky-400 font-semibold">
                                 Recommended Diagnostic Test:
                               </span>
-                              <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">
+                              <p className="text-zinc-700 dark:text-zinc-300 mt-0.5">
                                 {fault.recommendedTest}
                               </p>
                             </div>
                             <div className="pt-1.5 border-t border-zinc-100 dark:border-zinc-800">
-                              <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
+                              <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
                                 Expected Multimeter Reading:
                               </span>
-                              <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">
+                              <p className="text-zinc-700 dark:text-zinc-300 mt-0.5">
                                 {fault.expectedResult}
                               </p>
                             </div>
@@ -433,8 +441,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Passed")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Passed"
-                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
-                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:border-emerald-500 hover:text-emerald-700 hover:bg-emerald-50/60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Passed
@@ -443,8 +451,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Failed")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Failed"
-                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
-                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:border-rose-500 hover:text-rose-700 hover:bg-rose-50/60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Failed
@@ -453,8 +461,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Inconclusive")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Inconclusive"
-                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
-                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:border-amber-500 hover:text-amber-700 hover:bg-amber-50/60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Inconclusive

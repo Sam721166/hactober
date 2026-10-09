@@ -457,10 +457,10 @@ function ProjectBuilderContent() {
                           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                             {generatedPlan.bom?.map((item: any, idx: number) => (
                               <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                <td className="p-2.5 font-bold text-zinc-900 dark:text-zinc-100">{item.ref}</td>
+                                <td className="p-2.5 font-bold text-sky-700 dark:text-sky-400">{item.ref}</td>
                                 <td className="p-2.5 text-zinc-700 dark:text-zinc-300">{item.name}</td>
                                 <td className="p-2.5 text-zinc-600 dark:text-zinc-400">{item.quantity}</td>
-                                <td className="p-2.5 font-bold text-zinc-900 dark:text-zinc-100">{item.unitPriceInr ? `₹${item.unitPriceInr}` : "—"}</td>
+                                <td className="p-2.5 font-bold text-emerald-700 dark:text-emerald-400">{item.unitPriceInr ? `₹${item.unitPriceInr}` : "—"}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -485,10 +485,10 @@ function ProjectBuilderContent() {
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                           {generatedPlan.wiringInstructions?.map((wire: any, idx: number) => (
                             <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                              <td className="p-2.5 font-bold text-zinc-900 dark:text-zinc-100">
+                              <td className="p-2.5 font-bold text-sky-700 dark:text-sky-400">
                                 {wire.from} ({wire.pinFrom})
                               </td>
-                              <td className="p-2.5 font-bold text-zinc-700 dark:text-zinc-300">
+                              <td className="p-2.5 font-bold text-emerald-700 dark:text-emerald-400">
                                 {wire.to} ({wire.pinTo})
                               </td>
                               <td className="p-2.5 text-zinc-500">{wire.note || "Standard jumper wire"}</td>
@@ -511,7 +511,7 @@ function ProjectBuilderContent() {
                         onClick={handleCopyCode}
                         className="flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-mono hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors"
                       >
-                        {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-zinc-500" />}
                         <span>{copiedCode ? "Copied" : "Copy Code"}</span>
                       </button>
                     </div>
@@ -542,8 +542,8 @@ function ProjectBuilderContent() {
                           </span>
                         </div>
                         <p className="text-zinc-700 dark:text-zinc-300 leading-relaxed">{s.instructions}</p>
-                        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400 font-mono text-[11px] pt-1">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-zinc-900 dark:text-zinc-100" />
+                        <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-mono text-[11px] pt-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Expected Outcome: {s.outcome}</span>
                         </div>
                       </div>

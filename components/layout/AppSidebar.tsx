@@ -205,7 +205,11 @@ export function AppSidebar({
                             className={`rounded px-1.5 py-0.2 text-[9px] font-mono uppercase font-bold tracking-tight ${
                               isActive
                                 ? "bg-white/20 text-white dark:bg-zinc-900/20 dark:text-zinc-900"
-                                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                : item.badge === "AI"
+                                ? "bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800"
+                                : item.badge === "Canvas"
+                                ? "bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800"
+                                : "bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
                             }`}
                           >
                             {item.badge}
@@ -239,15 +243,15 @@ export function AppSidebar({
         {!isCollapsed && (
           <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-2 text-[10px] font-mono text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <span className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200 font-medium">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 PostgreSQL
               </span>
-              <span className="text-zinc-400">Connected</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Live</span>
             </div>
             <div className="flex items-center justify-between pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
-              <span className="text-zinc-700 dark:text-zinc-300">Gemma & Gemini</span>
-              <span className="text-zinc-400">Online</span>
+              <span className="text-zinc-800 dark:text-zinc-200 font-medium">Gemma & Gemini</span>
+              <span className="text-violet-700 dark:text-violet-400 font-semibold">Online</span>
             </div>
           </div>
         )}
