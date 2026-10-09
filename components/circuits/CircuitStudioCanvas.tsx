@@ -5,6 +5,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   addEdge,
   useNodesState,
@@ -12,6 +13,8 @@ import {
   Connection,
   Edge,
   Node,
+  NodeChange,
+  EdgeChange,
   MarkerType,
   ConnectionMode,
   ConnectionLineType,
@@ -48,6 +51,8 @@ import {
   X,
   Layers,
   ExternalLink,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 interface CircuitStudioProps {
@@ -61,6 +66,64 @@ interface CircuitStudioProps {
   diagramOnly?: boolean;
   allowSimulation?: boolean;
   onOpenStudio?: () => void;
+}
+
+interface CircuitSnapshot {
+  nodes: Node[];
+  edges: Edge[];
+}
+
+// Helper function to arrange components in an intuitive 3-column schematic layout:
+// Sensors/Inputs on left, Microcontroller in center, Displays/Actuators on right
+export function computeAutoLayout(
+  components: { id: string; type: string }[]
+): Record<string, { x: number; y: number }> {
+  const leftCol: string[] = []; // inputs, sensors, passives
+  const centerCol: string[] = []; // microcontrollers, power
+  const rightCol: string[] = []; // displays, actuators
+
+  components.forEach((c) => {
+    const def = COMPONENT_DEFINITIONS[c.type];
+    const cat = def?.category;
+    if (cat === "microcontrollers") {
+      centerCol.push(c.id);
+    } else if (cat === "displays" || cat === "actuators") {
+      rightCol.push(c.id);
+    } else {
+      leftCol.push(c.id);
+    }
+  });
+
+  // If no MCU found, place the first component in center
+  if (centerCol.length === 0 && leftCol.length > 0) {
+    centerCol.push(leftCol.shift()!);
+  }
+
+  const positions: Record<string, { x: number; y: number }> = {};
+  const X_LEFT = 60;
+  const X_CENTER = 420;
+  const X_RIGHT = 780;
+  const Y_GAP = 260;
+  const Y_START = 60;
+
+  leftCol.forEach((id, idx) => {
+    positions[id] = { x: X_LEFT, y: Y_START + idx * Y_GAP };
+  });
+
+  const maxRows = Math.max(leftCol.length, rightCol.length, 1);
+  const centerOffsetY = Math.max(
+    Y_START,
+    Y_START + ((maxRows - centerCol.length) * Y_GAP) / 2
+  );
+  centerCol.forEach((id, idx) => {
+    positions[id] = { x: X_CENTER, y: centerOffsetY + idx * (Y_GAP + 20) };
+  });
+
+  rightCol.forEach((id, idx) => {
+    positions[id] = { x: X_RIGHT, y: Y_START + idx * Y_GAP };
+  });
+
+  return positions;
 }
 
 export function CircuitStudioCanvas({
@@ -84,7 +147,7 @@ export function CircuitStudioCanvas({
         {
           id: "esp32-1",
           type: "hardwareNode",
-          position: { x: 300, y: 150 },
+          position: { x: 420, y: 150 },
           data: {
             label: "ESP32 DevKit",
             type: "esp32",
@@ -94,7 +157,7 @@ export function CircuitStudioCanvas({
         {
           id: "sensor-1",
           type: "hardwareNode",
-          position: { x: 80, y: 150 },
+          position: { x: 60, y: 150 },
           data: {
             label: "DHT22 Sensor",
             type: "dht22_sensor",
@@ -104,12 +167,35 @@ export function CircuitStudioCanvas({
       ];
     }
 
-    return initialCircuit.components.map((comp) => {
+    const comps = initialCircuit.components;
+    const hasPositions = comps.every(
+      (c) => typeof c.x === "number" && typeof c.y === "number"
+    );
+    let needsAutoLayout = !hasPositions || diagramOnly;
+
+    if (hasPositions && !needsAutoLayout) {
+      for (let i = 0; i < comps.length; i++) {
+        for (let j = i + 1; j < comps.length; j++) {
+          const dx = Math.abs(comps[i].x - comps[j].x);
+          const dy = Math.abs(comps[i].y - comps[j].y);
+          if (dx < 260 && dy < 200) {
+            needsAutoLayout = true;
+            break;
+          }
+        }
+        if (needsAutoLayout) break;
+      }
+    }
+
+    const autoPositions = needsAutoLayout ? computeAutoLayout(comps) : null;
+
+    return comps.map((comp) => {
       const def = COMPONENT_DEFINITIONS[comp.type] || COMPONENT_DEFINITIONS.esp32;
+      const pos = autoPositions?.[comp.id] || { x: comp.x ?? 250, y: comp.y ?? 150 };
       return {
         id: comp.id,
         type: "hardwareNode",
-        position: { x: comp.x ?? 250, y: comp.y ?? 150 },
+        position: pos,
         data: {
           label: comp.label || def.name,
           type: comp.type,
@@ -118,7 +204,7 @@ export function CircuitStudioCanvas({
         },
       };
     });
-  }, [initialCircuit]);
+  }, [initialCircuit, diagramOnly]);
 
   // Helper for real-world hardware jumper wire colors based on pin semantics
   const getWireColor = (pinId?: string | null): string => {
@@ -175,6 +261,202 @@ export function CircuitStudioCanvas({
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  const [showLegend, setShowLegend] = useState(false);
+  const reactFlowInstance = useRef<any>(null);
+
+  // Undo / Redo History State
+  const [history, setHistory] = useState<{
+    past: CircuitSnapshot[];
+    future: CircuitSnapshot[];
+  }>({
+    past: [],
+    future: [],
+  });
+
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
+
+  const dragStartSnapshotRef = useRef<CircuitSnapshot | null>(null);
+
+  // Push an immutable snapshot before any modifying action
+  const pushSnapshot = useCallback(() => {
+    setHistory((prev) => ({
+      past: [
+        ...prev.past.slice(-30),
+        {
+          nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+          edges: JSON.parse(JSON.stringify(edgesRef.current)),
+        },
+      ],
+      future: [],
+    }));
+  }, []);
+
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
+
+  const handleUndo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.past.length === 0) return prev;
+      const previous = prev.past[prev.past.length - 1];
+      const newPast = prev.past.slice(0, prev.past.length - 1);
+      const currentSnapshot = {
+        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+        edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      };
+
+      setNodes(previous.nodes);
+      setEdges(previous.edges);
+      setSelectedNode(null);
+      setSelectedEdge(null);
+
+      return {
+        past: newPast,
+        future: [currentSnapshot, ...prev.future],
+      };
+    });
+  }, [setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.future.length === 0) return prev;
+      const next = prev.future[0];
+      const newFuture = prev.future.slice(1);
+      const currentSnapshot = {
+        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+        edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      };
+
+      setNodes(next.nodes);
+      setEdges(next.edges);
+      setSelectedNode(null);
+      setSelectedEdge(null);
+
+      return {
+        past: [...prev.past, currentSnapshot],
+        future: newFuture,
+      };
+    });
+  }, [setNodes, setEdges]);
+
+  // Global Keyboard shortcuts: Ctrl+Z / Cmd+Z for Undo, Ctrl+Y / Cmd+Shift+Z for Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const isMac =
+        typeof window !== "undefined" &&
+        /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+      const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modKey && !e.altKey) {
+        if (e.key.toLowerCase() === "z" && !e.shiftKey) {
+          e.preventDefault();
+          handleUndo();
+        } else if (
+          (e.key.toLowerCase() === "z" && e.shiftKey) ||
+          (e.key.toLowerCase() === "y" && !e.shiftKey)
+        ) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Diagram-only auto layout handler
+  const handleAutoLayout = useCallback(() => {
+    pushSnapshot();
+    const layoutPositions = computeAutoLayout(
+      nodes.map((n) => ({ id: n.id, type: (n.data as any)?.type || "" }))
+    );
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => {
+        const pos = layoutPositions[node.id];
+        return pos ? { ...node, position: pos } : node;
+      })
+    );
+    setTimeout(() => {
+      if (reactFlowInstance.current) {
+        reactFlowInstance.current.fitView({ padding: 0.25, duration: 300 });
+      }
+    }, 50);
+  }, [nodes, setNodes, pushSnapshot]);
+
+  // Diagram-only fit view handler
+  const handleFitView = useCallback(() => {
+    if (reactFlowInstance.current) {
+      reactFlowInstance.current.fitView({ padding: 0.25, duration: 300 });
+    }
+  }, []);
+
+  // Intercept node deletions to capture undo snapshot
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      if (changes.some((c) => c.type === "remove")) {
+        pushSnapshot();
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange, pushSnapshot]
+  );
+
+  // Intercept edge deletions to capture undo snapshot
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (changes.some((c) => c.type === "remove")) {
+        pushSnapshot();
+      }
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, pushSnapshot]
+  );
+
+  // Drag handlers to capture component movement in history
+  const handleNodeDragStart = useCallback(() => {
+    dragStartSnapshotRef.current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      edges: JSON.parse(JSON.stringify(edgesRef.current)),
+    };
+  }, []);
+
+  const handleNodeDragStop = useCallback(() => {
+    if (dragStartSnapshotRef.current) {
+      const prevNodes = dragStartSnapshotRef.current.nodes;
+      const changed = nodesRef.current.some((node) => {
+        const prev = prevNodes.find((p) => p.id === node.id);
+        return (
+          prev &&
+          (prev.position.x !== node.position.x ||
+            prev.position.y !== node.position.y)
+        );
+      });
+      if (changed) {
+        setHistory((prev) => ({
+          past: [...prev.past.slice(-29), dragStartSnapshotRef.current!],
+          future: [],
+        }));
+      }
+      dragStartSnapshotRef.current = null;
+    }
   }, []);
 
   // Component Library search and category filter state
@@ -578,9 +860,10 @@ export function CircuitStudioCanvas({
         data: { status: "user confirmed", evidence: "Connected in Circuit Studio" },
       };
 
+      pushSnapshot();
       setEdges((eds) => addEdge(newEdge, eds));
     },
-    [setEdges]
+    [setEdges, pushSnapshot]
   );
 
   // Add component to canvas
@@ -589,6 +872,7 @@ export function CircuitStudioCanvas({
       const def = COMPONENT_DEFINITIONS[type];
       if (!def) return;
 
+      pushSnapshot();
       setNodes((nds) => {
         const newId = `${type}-${nds.length + 1}`;
         const newNode: Node = {
@@ -604,18 +888,21 @@ export function CircuitStudioCanvas({
         return [...nds, newNode];
       });
     },
-    [setNodes]
+    [setNodes, pushSnapshot]
   );
 
   // Delete selected node
   const handleDeleteSelected = () => {
-    if (selectedNode) {
-      setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-      setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
-      setSelectedNode(null);
-    } else if (selectedEdge) {
-      setEdges((eds) => eds.filter((e) => e.id !== selectedEdge.id));
-      setSelectedEdge(null);
+    if (selectedNode || selectedEdge) {
+      pushSnapshot();
+      if (selectedNode) {
+        setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
+        setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
+        setSelectedNode(null);
+      } else if (selectedEdge) {
+        setEdges((eds) => eds.filter((e) => e.id !== selectedEdge.id));
+        setSelectedEdge(null);
+      }
     }
   };
 
@@ -752,53 +1039,110 @@ export function CircuitStudioCanvas({
     <div className="flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
       {/* Studio Toolbar - Switch between Diagram Only minimal bar and Full Studio Toolbar */}
       {diagramOnly ? (
-        <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100">
-              <Cpu className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="truncate max-w-[200px] sm:max-w-xs">{projectName}</span>
+        <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white/95 px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/95 backdrop-blur shrink-0 z-10">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100 truncate">
+              <Cpu className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+              <span className="truncate max-w-[130px] sm:max-w-xs">{projectName}</span>
             </div>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-[10px] font-mono text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            <span className="hidden md:inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-mono text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
               {nodes.length} Components • {edges.length} Wires
             </span>
+            {isSimulating && (
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 sm:px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                <span className="hidden sm:inline">Signals Flowing</span>
+                <span className="sm:hidden">Sim Active</span>
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Undo / Redo */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-0.5 shadow-2xs">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="rounded p-1 text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                title="Undo circuit change (Ctrl+Z)"
+                aria-label="Undo"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="rounded p-1 text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                title="Redo circuit change (Ctrl+Y)"
+                aria-label="Redo"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
             {allowSimulation && (
               <button
-                onClick={() => {
-                  setIsSimulating(!isSimulating);
-                  if (!isSimulating) setIsTerminalOpen(true);
-                }}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                onClick={() => setIsSimulating(!isSimulating)}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-xs transition-all ${
                   isSimulating
-                    ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
-                    : "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-xs"
+                    ? "bg-amber-500 hover:bg-amber-400 text-white ring-1 ring-amber-300/40"
+                    : "bg-emerald-600 hover:bg-emerald-500 text-white ring-1 ring-emerald-400/40 hover:scale-[1.02]"
                 }`}
-                title="Test hardware logic simulation"
+                title={isSimulating ? "Pause circuit simulation" : "Run interactive live simulation"}
               >
                 {isSimulating ? (
                   <>
                     <Pause className="h-3 w-3 fill-current" />
-                    <span>Pause Sim</span>
+                    <span>Pause</span>
                   </>
                 ) : (
                   <>
                     <Play className="h-3 w-3 fill-current" />
-                    <span>Test Simulation</span>
+                    <span>Simulate</span>
                   </>
                 )}
               </button>
             )}
 
+            <button
+              onClick={handleAutoLayout}
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors shadow-2xs"
+              title="Auto-organize components to avoid overlapping"
+            >
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              <span className="hidden sm:inline">Auto Layout</span>
+            </button>
+
+            <button
+              onClick={handleFitView}
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors shadow-2xs"
+              title="Fit diagram to canvas"
+            >
+              <Maximize2 className="h-3 w-3 text-zinc-500" />
+              <span className="hidden sm:inline">Fit</span>
+            </button>
+
+            <button
+              onClick={() => setShowLegend(!showLegend)}
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors shadow-2xs ${
+                showLegend
+                  ? "border-sky-400 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-300"
+              }`}
+              title="Show wire color & pin semantics legend"
+            >
+              <Info className="h-3 w-3 text-sky-500" />
+              <span className="hidden sm:inline">Legend</span>
+            </button>
+
             {onOpenStudio && (
               <button
                 onClick={onOpenStudio}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 transition-colors"
-                title="Open in full Circuit Studio"
+                className="flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/50 dark:hover:bg-sky-900/50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300 transition-colors shadow-2xs"
+                title="Open in full Circuit Studio to edit, add parts, and monitor serial"
               >
                 <ExternalLink className="h-3 w-3" />
-                <span className="hidden sm:inline">Open in Full Studio</span>
+                <span className="hidden sm:inline">Full Studio</span>
               </button>
             )}
           </div>
@@ -817,6 +1161,29 @@ export function CircuitStudioCanvas({
             <span className="font-mono text-[11px] text-zinc-500">
               {nodes.length} Components • {edges.length} Wires
             </span>
+
+            {/* Undo / Redo Buttons */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-white hover:shadow-xs disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+                title="Undo circuit change (Ctrl+Z)"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Undo</span>
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-white hover:shadow-xs disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+                title="Redo circuit change (Ctrl+Y)"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Redo</span>
+              </button>
+            </div>
+
             {designWarnings.length > 0 && (
               <span
                 onClick={() => setActiveTab("warnings")}
@@ -1247,9 +1614,11 @@ export function CircuitStudioCanvas({
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDragStop={handleNodeDragStop}
             connectionMode={ConnectionMode.Loose}
             connectionLineType={ConnectionLineType.SmoothStep}
             connectionLineStyle={{ stroke: "#06b6d4", strokeWidth: 2.5 }}
@@ -1276,14 +1645,40 @@ export function CircuitStudioCanvas({
             }}
             nodeTypes={nodeTypes}
             fitView
+            fitViewOptions={{ padding: 0.25 }}
+            onInit={(instance) => {
+              reactFlowInstance.current = instance;
+              setTimeout(() => {
+                instance.fitView({ padding: 0.25 });
+              }, 80);
+            }}
             colorMode="system"
             className="bg-zinc-50 dark:bg-zinc-950"
           >
             <Background gap={16} size={1} color="#71717a" className="opacity-20" />
             <Controls
-              position="top-left"
+              position={diagramOnly ? "bottom-left" : "top-left"}
               className="!bg-white !border-zinc-200 !shadow-xs dark:!bg-zinc-900 dark:!border-zinc-800 rounded-lg overflow-hidden [&_button]:!bg-white [&_button]:!border-b-zinc-200 [&_button]:!text-zinc-900 [&_button_svg]:!fill-zinc-900 hover:[&_button]:!bg-zinc-100 hover:[&_button_svg]:!fill-black dark:[&_button]:!bg-zinc-900 dark:[&_button]:!border-b-zinc-800 dark:[&_button]:!text-zinc-100 dark:[&_button_svg]:!fill-zinc-100 dark:hover:[&_button]:!bg-zinc-800 dark:hover:[&_button_svg]:!fill-white [&_button:last-child]:!border-b-0"
-            />
+            >
+              <ControlButton
+                onClick={handleUndo}
+                disabled={!canUndo}
+                title="Undo (Ctrl+Z)"
+                aria-label="Undo"
+                className="disabled:!opacity-30 disabled:!cursor-not-allowed !flex !items-center !justify-center"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </ControlButton>
+              <ControlButton
+                onClick={handleRedo}
+                disabled={!canRedo}
+                title="Redo (Ctrl+Y)"
+                aria-label="Redo"
+                className="disabled:!opacity-30 disabled:!cursor-not-allowed !flex !items-center !justify-center"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </ControlButton>
+            </Controls>
             {!diagramOnly && (
               <MiniMap
                 position="bottom-right"
@@ -1295,6 +1690,63 @@ export function CircuitStudioCanvas({
               />
             )}
           </ReactFlow>
+
+          {/* Floating Wire & Pin Semantics Legend in Diagram Only mode */}
+          {diagramOnly && showLegend && (
+            <div className="absolute top-3 right-3 z-20 w-64 rounded-xl border border-zinc-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                  <Info className="h-3.5 w-3.5 text-sky-500" />
+                  Wire & Pin Semantics
+                </span>
+                <button
+                  onClick={() => setShowLegend(false)}
+                  className="rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                  title="Close legend"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2.5 space-y-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" /> Power Rails
+                  </span>
+                  <span className="text-zinc-400">3.3V / 5V / VIN</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-zinc-800 dark:bg-zinc-400" /> Ground
+                  </span>
+                  <span className="text-zinc-400">GND</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-cyan-500" /> Digital I/O
+                  </span>
+                  <span className="text-zinc-400">GPIO / Signals</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" /> Analog
+                  </span>
+                  <span className="text-zinc-400">ADC / Sensors</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-purple-500" /> I2C Bus
+                  </span>
+                  <span className="text-zinc-400">SDA / SCL</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" /> PWM / Motor
+                  </span>
+                  <span className="text-zinc-400">Speed / Angle</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Interactive Simulation Controls Overlay */}
           {!diagramOnly && (
