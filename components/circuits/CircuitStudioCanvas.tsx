@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -20,6 +20,8 @@ import "@xyflow/react/dist/style.css";
 
 import { HardwareNode } from "./HardwareNode";
 import { ComponentArtwork } from "./ComponentArtwork";
+import { VirtualSensorsPanel, VirtualSensorValues } from "./VirtualSensorsPanel";
+import { SerialMonitorDrawer, SerialLogEntry, TelemetryPoint } from "./SerialMonitorDrawer";
 import { COMPONENT_DEFINITIONS, ComponentDefinition } from "@/lib/circuits/registry";
 import {
   Cpu,
@@ -170,69 +172,330 @@ export function CircuitStudioCanvas({
   // Simulation Engine State
   const [isSimulating, setIsSimulating] = useState(false);
   const [simTick, setSimTick] = useState(0);
-  const [simSensorValue, setSimSensorValue] = useState(65);
-  const [isButtonPressed, setIsButtonPressed] = useState(false);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const [serialLogs, setSerialLogs] = useState<string[]>([
-    "[SYSTEM] Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
+  const [baudRate, setBaudRate] = useState<number>(115200);
+
+  // Rich Virtual Sensors & Inputs state
+  const [virtualSensors, setVirtualSensors] = useState<VirtualSensorValues>({
+    soilMoisture: 65,
+    temperature: 24.5,
+    humidity: 55,
+    distanceCm: 110,
+    lightLux: 420,
+    potentiometerVal: 512,
+    gasPpm: 120,
+    isButtonPressed: false,
+    isSwitchLatching: false,
+    isMotionTriggered: false,
+    isAutoFluctuate: false,
+  });
+
+  // Actuator manual overrides & timers via Serial CLI
+  const [manualLedOverride, setManualLedOverride] = useState<boolean | null>(null);
+  const [manualRelayOverride, setManualRelayOverride] = useState<boolean | null>(null);
+  const [buzzerBeepTimer, setBuzzerBeepTimer] = useState<number>(0);
+
+  // Structured Serial Logs & Live Telemetry History for Plotter
+  const [structuredLogs, setStructuredLogs] = useState<SerialLogEntry[]>([
+    {
+      id: "boot-init",
+      timestamp: "0.0s",
+      tag: "BOOT",
+      text: "System Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
+      raw: "[0.0s] [BOOT] System Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
+    },
   ]);
+  const [telemetryHistory, setTelemetryHistory] = useState<TelemetryPoint[]>([]);
 
   // Derived simulation states based on sensor and clock ticks
-  const simLedOn = isSimulating && (simSensorValue > 50 || isButtonPressed || simTick % 2 === 0);
-  const simServoAngle = isSimulating ? [30, 90, 150, 90][simTick % 4] : 0;
-  const simBuzzerActive = isSimulating && (simSensorValue > 80 || isButtonPressed);
-  const simRelayActive = isSimulating && (simSensorValue > 60);
+  const simLedOn =
+    manualLedOverride !== null
+      ? manualLedOverride
+      : isSimulating &&
+        (virtualSensors.soilMoisture > 50 ||
+          virtualSensors.isButtonPressed ||
+          virtualSensors.isSwitchLatching ||
+          simTick % 2 === 0);
+
+  const simServoAngle = isSimulating
+    ? Math.round((virtualSensors.potentiometerVal / 1023) * 180)
+    : 0;
+
+  const simBuzzerActive =
+    buzzerBeepTimer > 0 ||
+    (isSimulating &&
+      (virtualSensors.soilMoisture > 80 ||
+        virtualSensors.gasPpm > 600 ||
+        virtualSensors.isButtonPressed ||
+        virtualSensors.isMotionTriggered ||
+        virtualSensors.distanceCm < 25));
+
+  const simRelayActive =
+    manualRelayOverride !== null
+      ? manualRelayOverride
+      : isSimulating && (virtualSensors.soilMoisture > 60 || virtualSensors.gasPpm > 450);
+
   const simOledMsg = isSimulating
-    ? `SOIL: ${simSensorValue}% | LED: ${simLedOn ? "ON" : "OFF"}`
+    ? `SOIL: ${virtualSensors.soilMoisture}% | ${virtualSensors.temperature}°C`
     : "128x64 SSD1306";
+
+  // Virtual Firmware Command Parser (TX interactive terminal)
+  const handleSendCommand = useCallback((cmd: string) => {
+    const trimmed = cmd.trim();
+    if (!trimmed) return;
+    const upper = trimmed.toUpperCase();
+    const timestamp = `${(simTick * 0.8).toFixed(1)}s`;
+
+    const newLogs: SerialLogEntry[] = [
+      {
+        id: `cmd-${Date.now()}-${Math.random()}`,
+        timestamp,
+        tag: "CMD",
+        text: `> ${trimmed}`,
+        raw: `[${timestamp}] [CMD] > ${trimmed}`,
+      },
+    ];
+
+    if (upper === "HELP") {
+      newLogs.push({
+        id: `reply-${Date.now()}-1`,
+        timestamp,
+        tag: "INFO",
+        text: "Firmware CLI Commands: STATUS, READ SENSORS, LED ON, LED OFF, RELAY ON, RELAY OFF, BEEP, RESET",
+        raw: `[${timestamp}] [INFO] Firmware CLI Commands: STATUS, READ SENSORS, LED ON, LED OFF, RELAY ON, RELAY OFF, BEEP, RESET`,
+      });
+    } else if (upper === "STATUS") {
+      newLogs.push({
+        id: `reply-${Date.now()}-2`,
+        timestamp,
+        tag: "INFO",
+        text: `Uptime: ${(simTick * 0.8).toFixed(1)}s | Rails: 3.3V=3.29V, 5V=4.98V | Heap: 284KB Free | Clock: 240MHz`,
+        raw: `[${timestamp}] [INFO] Uptime: ${(simTick * 0.8).toFixed(1)}s | Rails: 3.3V=3.29V, 5V=4.98V | Heap: 284KB Free | Clock: 240MHz`,
+      });
+    } else if (upper === "LED ON") {
+      setManualLedOverride(true);
+      newLogs.push({
+        id: `reply-${Date.now()}-3`,
+        timestamp,
+        tag: "ACTUATOR",
+        text: "GPIO Output -> LED Driven HIGH (State = 1)",
+        raw: `[${timestamp}] [ACTUATOR] GPIO Output -> LED Driven HIGH (State = 1)`,
+      });
+    } else if (upper === "LED OFF") {
+      setManualLedOverride(false);
+      newLogs.push({
+        id: `reply-${Date.now()}-4`,
+        timestamp,
+        tag: "ACTUATOR",
+        text: "GPIO Output -> LED Driven LOW (State = 0)",
+        raw: `[${timestamp}] [ACTUATOR] GPIO Output -> LED Driven LOW (State = 0)`,
+      });
+    } else if (upper === "RELAY ON") {
+      setManualRelayOverride(true);
+      newLogs.push({
+        id: `reply-${Date.now()}-5`,
+        timestamp,
+        tag: "ACTUATOR",
+        text: "Relay Coil ENERGIZED -> NO Contact Closed",
+        raw: `[${timestamp}] [ACTUATOR] Relay Coil ENERGIZED -> NO Contact Closed`,
+      });
+    } else if (upper === "RELAY OFF") {
+      setManualRelayOverride(false);
+      newLogs.push({
+        id: `reply-${Date.now()}-6`,
+        timestamp,
+        tag: "ACTUATOR",
+        text: "Relay Coil DE-ENERGIZED -> Contact Open",
+        raw: `[${timestamp}] [ACTUATOR] Relay Coil DE-ENERGIZED -> Contact Open`,
+      });
+    } else if (upper.includes("READ") || upper.includes("SENSORS")) {
+      newLogs.push({
+        id: `reply-${Date.now()}-7`,
+        timestamp,
+        tag: "SENSOR",
+        text: `Telemetry: Soil=${virtualSensors.soilMoisture}%, Temp=${virtualSensors.temperature}°C, Dist=${virtualSensors.distanceCm}cm, LDR=${virtualSensors.lightLux}lx, Gas=${virtualSensors.gasPpm}ppm, Pot=${virtualSensors.potentiometerVal}`,
+        raw: `[${timestamp}] [SENSOR] Telemetry: Soil=${virtualSensors.soilMoisture}%, Temp=${virtualSensors.temperature}°C, Dist=${virtualSensors.distanceCm}cm, LDR=${virtualSensors.lightLux}lx, Gas=${virtualSensors.gasPpm}ppm, Pot=${virtualSensors.potentiometerVal}`,
+      });
+    } else if (upper === "BEEP" || upper === "BUZZER BEEP") {
+      setBuzzerBeepTimer(3);
+      newLogs.push({
+        id: `reply-${Date.now()}-8`,
+        timestamp,
+        tag: "ACTUATOR",
+        text: "Piezo Buzzer: 2.7kHz PWM tone pulse triggered for 3s",
+        raw: `[${timestamp}] [ACTUATOR] Piezo Buzzer: 2.7kHz PWM tone pulse triggered for 3s`,
+      });
+    } else if (upper === "RESET") {
+      setManualLedOverride(null);
+      setManualRelayOverride(null);
+      newLogs.push({
+        id: `reply-${Date.now()}-9`,
+        timestamp,
+        tag: "BOOT",
+        text: "System soft reset executed. Restoring default automated control logic.",
+        raw: `[${timestamp}] [BOOT] System soft reset executed. Restoring default automated control logic.`,
+      });
+    } else {
+      newLogs.push({
+        id: `reply-${Date.now()}-err`,
+        timestamp,
+        tag: "WARN",
+        text: `Unknown command: '${trimmed}'. Type 'HELP' for supported commands.`,
+        raw: `[${timestamp}] [WARN] Unknown command: '${trimmed}'. Type 'HELP' for supported commands.`,
+      });
+    }
+
+    setStructuredLogs((prev) => [...prev.slice(-100), ...newLogs]);
+  }, [simTick, virtualSensors]);
+
+  // Monotonic log ID generator and tick tracking refs
+  const simTickRef = useRef(0);
+  const logCounterRef = useRef(0);
+  const simParamsRef = useRef({
+    virtualSensors,
+    simLedOn,
+    simRelayActive,
+    simBuzzerActive,
+    baudRate,
+  });
+
+  useEffect(() => {
+    simParamsRef.current = {
+      virtualSensors,
+      simLedOn,
+      simRelayActive,
+      simBuzzerActive,
+      baudRate,
+    };
+  }, [virtualSensors, simLedOn, simRelayActive, simBuzzerActive, baudRate]);
 
   // Simulation Clock Tick Loop
   useEffect(() => {
-    if (!isSimulating) return;
+    if (!isSimulating) {
+      simTickRef.current = 0;
+      return;
+    }
 
     const timer = setInterval(() => {
-      setSimTick((t) => {
-        const nextTick = t + 1;
-        const timestamp = (nextTick * 0.8).toFixed(1);
-        const logEntries: string[] = [];
+      const nextTick = simTickRef.current + 1;
+      simTickRef.current = nextTick;
+      setSimTick(nextTick);
 
-        if (nextTick === 1) {
-          logEntries.push(`[${timestamp}s] [BOOT] Microcontroller initialized at 115200 baud`);
-          logEntries.push(`[${timestamp}s] [POWER] 3.3V, 5.0V, and 9V voltage rails nominal`);
-        }
-        if (nextTick % 2 === 0) {
-          logEntries.push(
-            `[${timestamp}s] [SENSOR] ADC Read: ${Math.round(simSensorValue * 40.95)} (Scaled: ${simSensorValue}%)`
-          );
-        }
-        if (nextTick % 4 === 0) {
-          logEntries.push(
-            `[${timestamp}s] [ACTUATOR] GPIO Status: LED=${simLedOn ? "HIGH" : "LOW"}, Relay=${simRelayActive ? "CLOSED" : "OPEN"}`
-          );
-        }
-        if (nextTick % 5 === 0) {
-          logEntries.push(
-            `[${timestamp}s] [IMU] MPU-6050: Accel[X=0.03g, Y=-0.01g, Z=0.99g] Temp: 26.4°C`
-          );
-        }
-        if (nextTick % 6 === 0) {
-          logEntries.push(
-            `[${timestamp}s] [BUS] I2C Bus @ 0x3C (OLED) & 0x27 (LCD1602) display update OK`
-          );
-        }
-        if (simBuzzerActive && nextTick % 3 === 0) {
-          logEntries.push(`[${timestamp}s] [WARN] High threshold trigger -> Buzzer active!`);
-        }
+      const {
+        virtualSensors: curSensors,
+        simLedOn: curLed,
+        simRelayActive: curRelay,
+        simBuzzerActive: curBuzzer,
+        baudRate: curBaud,
+      } = simParamsRef.current;
 
-        if (logEntries.length > 0) {
-          setSerialLogs((prev) => [...prev.slice(-40), ...logEntries]);
-        }
-        return nextTick;
-      });
+      const timestamp = `${(nextTick * 0.8).toFixed(1)}s`;
+      const logEntries: SerialLogEntry[] = [];
+      const createId = (prefix: string) => `${prefix}-${++logCounterRef.current}-${nextTick}`;
+
+      if (nextTick === 1) {
+        logEntries.push({
+          id: createId("boot"),
+          timestamp,
+          tag: "BOOT",
+          text: `Microcontroller initialized at ${curBaud} baud`,
+          raw: `[${timestamp}] [BOOT] Microcontroller initialized at ${curBaud} baud`,
+        });
+        logEntries.push({
+          id: createId("pwr"),
+          timestamp,
+          tag: "POWER",
+          text: "3.3V, 5.0V, and 9V voltage rails nominal",
+          raw: `[${timestamp}] [POWER] 3.3V, 5.0V, and 9V voltage rails nominal`,
+        });
+      }
+      if (nextTick % 2 === 0) {
+        logEntries.push({
+          id: createId("adc"),
+          timestamp,
+          tag: "SENSOR",
+          text: `ADC Read: ${Math.round(curSensors.soilMoisture * 40.95)} (Soil: ${curSensors.soilMoisture}%, Temp: ${curSensors.temperature}°C)`,
+          raw: `[${timestamp}] [SENSOR] ADC Read: ${Math.round(curSensors.soilMoisture * 40.95)} (Soil: ${curSensors.soilMoisture}%, Temp: ${curSensors.temperature}°C)`,
+        });
+      }
+      if (nextTick % 4 === 0) {
+        logEntries.push({
+          id: createId("act"),
+          timestamp,
+          tag: "ACTUATOR",
+          text: `GPIO Status: LED=${curLed ? "HIGH" : "LOW"}, Relay=${curRelay ? "CLOSED" : "OPEN"}`,
+          raw: `[${timestamp}] [ACTUATOR] GPIO Status: LED=${curLed ? "HIGH" : "LOW"}, Relay=${curRelay ? "CLOSED" : "OPEN"}`,
+        });
+      }
+      if (nextTick % 5 === 0) {
+        logEntries.push({
+          id: createId("imu"),
+          timestamp,
+          tag: "IMU",
+          text: `MPU-6050: Accel[X=0.03g, Y=-0.01g, Z=0.99g] Temp: ${curSensors.temperature}°C`,
+          raw: `[${timestamp}] [IMU] MPU-6050: Accel[X=0.03g, Y=-0.01g, Z=0.99g] Temp: ${curSensors.temperature}°C`,
+        });
+      }
+      if (nextTick % 6 === 0) {
+        logEntries.push({
+          id: createId("bus"),
+          timestamp,
+          tag: "BUS",
+          text: "I2C Bus @ 0x3C (OLED) & 0x27 (LCD1602) display update OK",
+          raw: `[${timestamp}] [BUS] I2C Bus @ 0x3C (OLED) & 0x27 (LCD1602) display update OK`,
+        });
+      }
+      if (curSensors.gasPpm > 600 && nextTick % 3 === 0) {
+        logEntries.push({
+          id: createId("warn-gas"),
+          timestamp,
+          tag: "WARN",
+          text: `MQ-2 High gas concentration alert: ${curSensors.gasPpm} PPM!`,
+          raw: `[${timestamp}] [WARN] MQ-2 High gas concentration alert: ${curSensors.gasPpm} PPM!`,
+        });
+      }
+      if (curSensors.distanceCm < 25 && nextTick % 3 === 0) {
+        logEntries.push({
+          id: createId("warn-dist"),
+          timestamp,
+          tag: "WARN",
+          text: `HC-SR04 Proximity warning: Target closer than 25cm (${curSensors.distanceCm}cm)!`,
+          raw: `[${timestamp}] [WARN] HC-SR04 Proximity warning: Target closer than 25cm (${curSensors.distanceCm}cm)!`,
+        });
+      }
+      if (curBuzzer && nextTick % 3 === 0) {
+        logEntries.push({
+          id: createId("warn-buzz"),
+          timestamp,
+          tag: "WARN",
+          text: "High threshold trigger -> Buzzer active!",
+          raw: `[${timestamp}] [WARN] High threshold trigger -> Buzzer active!`,
+        });
+      }
+
+      if (logEntries.length > 0) {
+        setStructuredLogs((prev) => [...prev.slice(-60), ...logEntries]);
+      }
+
+      // Add telemetry point for real-time serial plotter graph
+      setTelemetryHistory((prev) => [
+        ...prev.slice(-45),
+        {
+          time: nextTick,
+          sensor: curSensors.soilMoisture,
+          temp: curSensors.temperature,
+          pot: Math.round((curSensors.potentiometerVal / 1023) * 100),
+        },
+      ]);
+
+      // Decrement buzzer beep timer if active
+      if (buzzerBeepTimer > 0) {
+        setBuzzerBeepTimer((b) => Math.max(0, b - 1));
+      }
     }, 800);
 
     return () => clearInterval(timer);
-  }, [isSimulating, simSensorValue, isButtonPressed, simLedOn, simRelayActive, simBuzzerActive]);
+  }, [isSimulating]);
 
   // Propagate simulation state to nodes
   useEffect(() => {
@@ -249,13 +512,23 @@ export function CircuitStudioCanvas({
             buzzerActive: simBuzzerActive,
             relayActive: simRelayActive,
             motorRunning: isSimulating,
-            sensorReading: simSensorValue,
+            sensorReading: virtualSensors.soilMoisture,
             tick: simTick,
           },
         },
       }))
     );
-  }, [isSimulating, simTick, simLedOn, simServoAngle, simOledMsg, simBuzzerActive, simRelayActive, simSensorValue, setNodes]);
+  }, [
+    isSimulating,
+    simTick,
+    simLedOn,
+    simServoAngle,
+    simOledMsg,
+    simBuzzerActive,
+    simRelayActive,
+    virtualSensors.soilMoisture,
+    setNodes,
+  ]);
 
   // Animate wires when simulating
   useEffect(() => {
@@ -926,122 +1199,62 @@ export function CircuitStudioCanvas({
             className="bg-zinc-50 dark:bg-zinc-950"
           >
             <Background gap={16} size={1} color="#71717a" className="opacity-20" />
-            <Controls className="!bg-white !border-zinc-200 !shadow-sm dark:!bg-zinc-900 dark:!border-zinc-800" />
+            <Controls
+              position="top-left"
+              className="!bg-white !border-zinc-200 !shadow-xs dark:!bg-zinc-900 dark:!border-zinc-800"
+            />
             <MiniMap
-              className="!bg-white !border-zinc-200 dark:!bg-zinc-900 dark:!border-zinc-800 !rounded-lg"
+              position="bottom-right"
+              className={`!bg-white !border-zinc-200 dark:!bg-zinc-900 dark:!border-zinc-800 !rounded-lg transition-all ${
+                isTerminalOpen ? "hidden md:block !bottom-76" : ""
+              }`}
               nodeStrokeColor="#06b6d4"
               nodeColor="#f4f4f5"
             />
           </ReactFlow>
 
           {/* Interactive Simulation Controls Overlay */}
-          {isSimulating && (
-            <div className="absolute top-4 right-4 z-20 w-72 rounded-xl border border-zinc-200/90 bg-white/95 p-3.5 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95 font-sans">
-              <div className="flex items-center justify-between border-b border-zinc-200/80 pb-2 dark:border-zinc-800">
-                <div className="flex items-center gap-1.5">
-                  <Sliders className="h-3.5 w-3.5 text-emerald-600" />
-                  <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                    Virtual Sensors & Inputs
-                  </span>
-                </div>
-                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
-                  LIVE
-                </span>
-              </div>
+          <VirtualSensorsPanel
+            isSimulating={isSimulating}
+            values={virtualSensors}
+            onChange={setVirtualSensors}
+            activeComponentTypes={nodes.map((n) => (n.data as any)?.type || "")}
+          />
 
-              {/* Sensor Slider */}
-              <div className="mt-3 space-y-1.5">
-                <div className="flex justify-between text-[11px] font-mono">
-                  <span className="text-zinc-500">Sensor Input (Moisture/Temp):</span>
-                  <span className="font-bold text-emerald-600">{simSensorValue}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={simSensorValue}
-                  onChange={(e) => setSimSensorValue(parseInt(e.target.value, 10))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer dark:bg-zinc-700 accent-emerald-600"
-                />
-                <div className="flex justify-between text-[9px] font-mono text-zinc-400 pt-0.5">
-                  <button onClick={() => setSimSensorValue(15)} className="hover:text-cyan-600">Dry (15%)</button>
-                  <button onClick={() => setSimSensorValue(55)} className="hover:text-cyan-600">Optimal (55%)</button>
-                  <button onClick={() => setSimSensorValue(85)} className="hover:text-rose-600 font-bold">Alarm (85%)</button>
-                </div>
-              </div>
+          {/* Embedded Monospace Serial Monitor & Waveform Plotter Drawer */}
+          <SerialMonitorDrawer
+            isOpen={isTerminalOpen}
+            onClose={() => setIsTerminalOpen(false)}
+            logs={structuredLogs}
+            onClearLogs={() => setStructuredLogs([])}
+            onSendCommand={handleSendCommand}
+            baudRate={baudRate}
+            onBaudRateChange={setBaudRate}
+            telemetryHistory={telemetryHistory}
+            isSimulating={isSimulating}
+          />
 
-              {/* Virtual Momentary Push Button */}
-              <div className="mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-mono text-zinc-500">Virtual Tactile Switch:</span>
-                <button
-                  onMouseDown={() => setIsButtonPressed(true)}
-                  onMouseUp={() => setIsButtonPressed(false)}
-                  onTouchStart={() => setIsButtonPressed(true)}
-                  onTouchEnd={() => setIsButtonPressed(false)}
-                  className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all shadow-xs ${
-                    isButtonPressed
-                      ? "bg-cyan-600 text-white scale-95 shadow-inner"
-                      : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200"
-                  }`}
-                >
-                  {isButtonPressed ? "PRESSED (HIGH)" : "HOLD TO PRESS"}
-                </button>
-              </div>
+          {/* Canvas Floating Legend - automatically hides when terminal drawer is open to eliminate UI overlap */}
+          {!isTerminalOpen && (
+            <div className="absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-lg border border-zinc-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono shadow-xs backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 text-zinc-600 dark:text-zinc-400">
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100">Pin Legend:</span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-rose-500" /> Power (3.3/5V)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-zinc-800 dark:bg-zinc-400" /> GND
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-cyan-500" /> Digital
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-amber-500" /> Analog
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-purple-500" /> I2C
+              </span>
             </div>
           )}
-
-          {/* Embedded Monospace Serial Monitor Terminal Drawer */}
-          {isTerminalOpen && (
-            <div className="absolute bottom-14 left-4 right-4 z-20 rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col font-mono text-xs max-h-48">
-              <div className="flex items-center justify-between bg-zinc-900/90 px-3 py-1.5 border-b border-zinc-800">
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <Terminal className="h-3.5 w-3.5 text-cyan-400" />
-                  <span className="font-bold text-[11px]">Serial Monitor • 115200 Baud (COM3 / /dev/ttyUSB0)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSerialLogs([])}
-                    className="text-[10px] text-zinc-400 hover:text-zinc-200"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    onClick={() => setIsTerminalOpen(false)}
-                    className="text-[11px] text-zinc-400 hover:text-white"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-1 text-[11px] text-emerald-400 selection:bg-emerald-900 selection:text-white">
-                {serialLogs.map((log, idx) => (
-                  <div key={idx} className="leading-tight">
-                    {log}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Canvas Floating Legend */}
-          <div className="absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-lg border border-zinc-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 text-zinc-600 dark:text-zinc-400">
-            <span className="font-semibold text-zinc-900 dark:text-zinc-100">Pin Legend:</span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-rose-500" /> Power (3.3/5V)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-zinc-800 dark:bg-zinc-400" /> GND
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-cyan-500" /> Digital
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-amber-500" /> Analog
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-purple-500" /> I2C
-            </span>
-          </div>
         </div>
       </div>
     </div>
