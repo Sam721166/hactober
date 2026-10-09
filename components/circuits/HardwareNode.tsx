@@ -97,8 +97,8 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
           : isSimulating
           ? "border-emerald-500/80 ring-2 ring-emerald-500/20 shadow-emerald-500/5"
           : selected
-          ? "border-cyan-500 ring-2 ring-cyan-500/20 shadow-cyan-500/10"
-          : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600"
+          ? "border-zinc-900 ring-2 ring-zinc-900/20 dark:border-zinc-100 dark:ring-zinc-100/20"
+          : "border-zinc-200 hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
       }`}
     >
       {/* Top handles */}

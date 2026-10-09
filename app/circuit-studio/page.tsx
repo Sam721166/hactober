@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Navbar } from "@/components/layout/Navbar";
 import { CircuitStudioCanvas } from "@/components/circuits/CircuitStudioCanvas";
-import { FolderKanban, Save, Sparkles, Layers } from "lucide-react";
+import { FolderKanban, Save, Sparkles, Layers, Cpu } from "lucide-react";
 
 export default function CircuitStudioPage() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -57,19 +56,20 @@ export default function CircuitStudioPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
-      <Navbar />
-
+    <div className="flex h-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
       {/* Top Project Switcher Subbar */}
-      <div className="flex h-10 items-center justify-between border-b border-zinc-200 bg-zinc-100/70 px-4 dark:border-zinc-800 dark:bg-zinc-900/50 shrink-0">
+      <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-            Active Workspace:
-          </span>
+          <div className="flex items-center gap-1.5 text-zinc-500">
+            <Cpu className="h-3.5 w-3.5 text-zinc-700 dark:text-zinc-300" />
+            <span className="font-mono text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Active Workspace:
+            </span>
+          </div>
           <select
             value={selectedProjectId}
             onChange={(e) => handleSelectProject(e.target.value)}
-            className="rounded border border-zinc-300 bg-white px-2 py-0.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -80,7 +80,9 @@ export default function CircuitStudioPage() {
         </div>
 
         <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-          <span>Mode: Visual Node & Wire Schematics</span>
+          <span className="rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 dark:border-zinc-800 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+            Visual Node & Wire Schematics
+          </span>
         </div>
       </div>
 

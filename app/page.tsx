@@ -3,20 +3,19 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Navbar } from "@/components/layout/Navbar";
 import {
-  Activity,
-  Cpu,
-  Layers,
   Sparkles,
+  Cpu,
+  Activity,
   ArrowRight,
-  ShieldCheck,
+  Layers,
+  CheckCircle2,
+  Package,
+  FolderKanban,
   Zap,
   Terminal,
-  CheckCircle2,
-  AlertTriangle,
-  Upload,
-  Code2,
+  ShieldCheck,
+  Search,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -48,186 +47,292 @@ export default function HomePage() {
     }
   };
 
+  const samplePrompts = [
+    "ESP32 Smart Irrigation with soil moisture sensor & relay pump",
+    "Arduino Uno OLED weather station with DHT22 & I2C display",
+    "Raspberry Pi Pico robotic arm with servo controllers",
+  ];
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100">
-      <Navbar />
-
-      {/* Hero Section */}
-      <section className="relative overflow-hidden border-b border-zinc-200 bg-white py-16 dark:border-zinc-800 dark:bg-zinc-900/60 sm:py-24">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 text-center">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800 dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-400 mb-6">
-            <span className="h-2 w-2 rounded-full bg-cyan-500 animate-pulse" />
-            <span>AI Hardware Engineering Platform</span>
-          </div>
-
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl text-zinc-900 dark:text-zinc-50">
-            From an idea to a{" "}
-            <span className="text-cyan-600 dark:text-cyan-400">working circuit.</span>
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-2xl text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            Build hardware projects from scratch, design circuits visually, and troubleshoot
-            real-world problems with an AI-powered engineering workspace.
-          </p>
-
-          {/* Prompt Input Form */}
-          <form
-            onSubmit={handleStartBuilding}
-            className="mx-auto mt-8 max-w-2xl rounded-2xl border border-zinc-300 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800/90 flex flex-col sm:flex-row gap-2"
-          >
-            <input
-              type="text"
-              value={projectInput}
-              onChange={(e) => setProjectInput(e.target.value)}
-              placeholder="I want to build a smart irrigation system using an ESP32..."
-              className="flex-1 bg-transparent px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none font-mono"
-            />
-            <button
-              type="submit"
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-cyan-500 transition-colors"
-            >
-              <span>Start building</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          </form>
-
-          {/* Secondary Actions */}
-          <div className="mt-4 flex items-center justify-center gap-4 text-xs">
-            <Link
-              href="/discover"
-              className="font-semibold text-zinc-600 hover:text-cyan-600 dark:text-zinc-400 dark:hover:text-cyan-400 flex items-center gap-1"
-            >
-              <span>Explore sample projects</span>
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* 3 Primary Pillars Showcase */}
-      <section className="py-16 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-              The Three Core Experiences
-            </h2>
-            <p className="mt-2 text-xs text-zinc-500 max-w-lg mx-auto">
-              CircuitDoctor unifies the entire embedded development cycle from ideation to diagnosis.
+    <div className="min-h-full bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100">
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-12">
+        {/* Top Hero Section */}
+        <section className="space-y-6 pt-4">
+          <div className="flex flex-col space-y-2">
+            <div className="inline-flex items-center gap-2 self-start rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-mono font-medium text-zinc-700 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100" />
+              <span>CIRCUITDOCTOR • AI HARDWARE WORKSPACE</span>
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl text-zinc-950 dark:text-zinc-50">
+              From an idea to a working circuit.
+            </h1>
+            <p className="max-w-2xl text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              Design embedded systems, simulate circuits visually, and troubleshoot real-world physical electronics with an AI engineering suite powered by Google Gemma open models.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {/* Feature 1: Circuit Doctor */}
-            <div className="flex flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 mb-4">
-                  <Activity className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                  Circuit Doctor
-                </h3>
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Upload a circuit photograph, inspect visible components, trace wires, and receive evidence-based diagnostic tests with expected multimeter readings.
-                </p>
+          {/* Quick Natural Language Prompt Bar */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+            <form onSubmit={handleStartBuilding} className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
+                <input
+                  type="text"
+                  value={projectInput}
+                  onChange={(e) => setProjectInput(e.target.value)}
+                  placeholder="Describe your project: e.g. Build an ESP32 soil moisture monitor with OLED..."
+                  className="w-full rounded-lg bg-zinc-50 py-2.5 pl-10 pr-3 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:bg-zinc-800/80 dark:text-zinc-100 dark:focus:ring-zinc-100"
+                />
               </div>
-              <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                <Link
-                  href="/circuit-doctor"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-500 dark:text-rose-400"
-                >
-                  <span>Launch Doctor</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </div>
+              <button
+                type="submit"
+                className="flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all shrink-0"
+              >
+                <span>Build with AI</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </form>
 
-            {/* Feature 2: Project Builder */}
-            <div className="flex flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            {/* Quick Inspiration Pills */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 text-[11px] text-zinc-500">
+              <span className="font-mono text-zinc-400">Try prompts:</span>
+              {samplePrompts.map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setProjectInput(p)}
+                  className="rounded-md border border-zinc-200 bg-zinc-50/70 px-2 py-0.5 text-left text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                >
+                  {p.split(" with ")[0]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Metric Insights Strip */}
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="text-[10px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+              Core Engines
+            </span>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              3 Tools
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Builder, Studio & Doctor
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="text-[10px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+              Verification
+            </span>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              Pin DRC
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Automated electrical rule checks
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="text-[10px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+              Diagnostics
+            </span>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              Vision AI
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Multimeter test predictions
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="text-[10px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+              Storage Layer
+            </span>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              PostgreSQL
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Persistent workspaces & sessions
+            </p>
+          </div>
+        </section>
+
+        {/* Three Core Pillars Cards */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              The Three Core Engineering Experiences
+            </h2>
+            <p className="text-xs text-zinc-500">
+              Everything needed to take embedded hardware from concept to functional reality.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {/* Feature 1: Project Builder */}
+            <div className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
               <div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400 mb-4">
-                  <Sparkles className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 mb-4">
+                  <Sparkles className="h-4 w-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                  Project Builder
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-zinc-950 dark:text-zinc-100">
+                    Project Builder
+                  </h3>
+                  <span className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.2 text-[10px] font-mono text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    AI Architect
+                  </span>
+                </div>
                 <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Describe a hardware project in natural language and receive a structured guide with BOM, pin-to-pin wiring instructions, compilable starter firmware, and step-by-step assembly steps.
+                  Provide an idea, budget, and MCU to generate complete Bill of Materials, pin-to-pin wiring schematics, and compilable starter firmware.
                 </p>
+
+                <div className="mt-4 space-y-1.5 text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Cost-optimized BOM (INR ₹)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Firmware with pin assignments</span>
+                  </div>
+                </div>
               </div>
+
               <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <Link
                   href="/builder"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-600 hover:text-cyan-500 dark:text-cyan-400"
+                  className="flex items-center justify-between rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all"
                 >
-                  <span>Build with AI</span>
+                  <span>Launch Builder</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
             </div>
 
-            {/* Feature 3: Circuit Studio */}
-            <div className="flex flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            {/* Feature 2: Circuit Studio */}
+            <div className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
               <div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400 mb-4">
-                  <Cpu className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 mb-4">
+                  <Cpu className="h-4 w-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                  Circuit Studio
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-zinc-950 dark:text-zinc-100">
+                    Circuit Studio
+                  </h3>
+                  <span className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.2 text-[10px] font-mono text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    Visual Canvas
+                  </span>
+                </div>
                 <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Design, connect, and inspect circuits on an interactive canvas with custom component nodes, named pins, live wire validation, and automated design rule checks.
+                  Design node schematics, connect verified pins, monitor live rail voltages, and run circuit simulations with real-time serial monitor outputs.
                 </p>
+
+                <div className="mt-4 space-y-1.5 text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Named pins & electrical DRC</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Real-time hardware simulation</span>
+                  </div>
+                </div>
               </div>
+
               <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <Link
                   href="/circuit-studio"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-purple-600 hover:text-purple-500 dark:text-purple-400"
+                  className="flex items-center justify-between rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 transition-all"
                 >
                   <span>Open Studio Canvas</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Featured Hardware Projects from Database */}
-      <section className="py-16 bg-white dark:bg-zinc-900/60 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex items-center justify-between mb-8">
+            {/* Feature 3: Circuit Doctor */}
+            <div className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+              <div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 mb-4">
+                  <Activity className="h-4 w-4" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-zinc-950 dark:text-zinc-100">
+                    Circuit Doctor
+                  </h3>
+                  <span className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.2 text-[10px] font-mono text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    Diagnostics
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+                  Upload a photo of your malfunctioning breadboard or PCB. Receive hypothesis test steps with expected multimeter readings to isolate faults.
+                </p>
+
+                <div className="mt-4 space-y-1.5 text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Visual wiring error detection</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-zinc-900 dark:text-zinc-100" />
+                    <span>Multimeter expected DC voltages</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <Link
+                  href="/circuit-doctor"
+                  className="flex items-center justify-between rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 transition-all"
+                >
+                  <span>Run Circuit Doctor</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Featured Tested Hardware Projects */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-                Featured Hardware Projects
+              <h2 className="text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+                Featured Reference Projects
               </h2>
-              <p className="text-xs text-zinc-500 mt-1">
-                Real, tested reference architectures seeded directly in PostgreSQL.
+              <p className="text-xs text-zinc-500">
+                Tested hardware architectures stored directly in PostgreSQL.
               </p>
             </div>
             <Link
               href="/discover"
-              className="text-xs font-semibold text-cyan-600 hover:text-cyan-500 flex items-center gap-1"
+              className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
             >
               <span>View all projects</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {featuredProjects.map((p) => (
               <div
                 key={p.id}
-                className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-900/80 flex flex-col justify-between"
+                className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 hover:border-zinc-400 dark:hover:border-zinc-600 transition-all"
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-cyan-600">
+                    <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
                       {p.board}
                     </span>
-                    <span className="font-mono text-[10px] text-zinc-400">{p.difficulty}</span>
+                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-mono text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                      {p.difficulty}
+                    </span>
                   </div>
-                  <h3 className="mt-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  <h3 className="mt-2 text-sm font-bold text-zinc-950 dark:text-zinc-100">
                     {p.title}
                   </h3>
                   <p className="mt-1 text-xs text-zinc-500 line-clamp-2 leading-relaxed">
@@ -235,75 +340,90 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-                  <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300 font-semibold">
+                <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
                     ₹{p.budgetInr}
                   </span>
                   <Link
                     href={`/projects/${p.id}`}
-                    className="text-xs font-semibold text-cyan-600 hover:text-cyan-500"
+                    className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
                   >
-                    Open Workspace →
+                    <span>Open Workspace</span>
+                    <ArrowRight className="h-3 w-3" />
                   </Link>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Workflow Bridge Section */}
-      <section className="py-16 bg-zinc-50 dark:bg-zinc-950">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 text-center">
-          <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-            How the CircuitDoctor Workflow Connects
-          </h2>
-          <p className="mt-2 text-xs text-zinc-500 max-w-md mx-auto">
-            From initial prompt to physical hardware verification.
-          </p>
+        {/* Workflow Roadmap */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-100">
+              Four-Phase Engineering Lifecycle
+            </h2>
+            <p className="text-xs text-zinc-500">
+              How the tools integrate to support your embedded development journey.
+            </p>
+          </div>
 
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-4 gap-4 text-left">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="font-mono text-xs font-bold text-cyan-600">01. Architecture</span>
-              <h4 className="mt-1 font-bold text-xs text-zinc-800 dark:text-zinc-200">Project Builder</h4>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Define idea, budget, and MCU to generate full wiring schematics and starter code.
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                01. Architecture
+              </span>
+              <h4 className="mt-1 text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                Project Builder
+              </h4>
+              <p className="mt-1 text-[11px] text-zinc-500 leading-relaxed">
+                Define idea, budget & MCU to generate pin-to-pin wiring and starter firmware.
               </p>
             </div>
 
             <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="font-mono text-xs font-bold text-purple-600">02. Design</span>
-              <h4 className="mt-1 font-bold text-xs text-zinc-800 dark:text-zinc-200">Circuit Studio</h4>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Inspect node pins, adjust wire connections, and verify design warnings.
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                02. Design
+              </span>
+              <h4 className="mt-1 text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                Circuit Studio
+              </h4>
+              <p className="mt-1 text-[11px] text-zinc-500 leading-relaxed">
+                Connect node pins visually, verify DRC warnings, and simulate firmware logic.
               </p>
             </div>
 
             <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="font-mono text-xs font-bold text-emerald-600">03. Assembly</span>
-              <h4 className="mt-1 font-bold text-xs text-zinc-800 dark:text-zinc-200">Physical Build</h4>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Follow the step-by-step build guide and flash generated firmware.
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                03. Assembly
+              </span>
+              <h4 className="mt-1 text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                Physical Build
+              </h4>
+              <p className="mt-1 text-[11px] text-zinc-500 leading-relaxed">
+                Follow step-by-step instructions and flash generated firmware to physical MCU.
               </p>
             </div>
 
             <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="font-mono text-xs font-bold text-rose-600">04. Diagnosis</span>
-              <h4 className="mt-1 font-bold text-xs text-zinc-800 dark:text-zinc-200">Circuit Doctor</h4>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Photograph any malfunctioning board to pinpoint wiring errors or inverted rails.
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                04. Diagnosis
+              </span>
+              <h4 className="mt-1 text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                Circuit Doctor
+              </h4>
+              <p className="mt-1 text-[11px] text-zinc-500 leading-relaxed">
+                Photograph malfunctioning hardware to isolate faulty wires or rail inversions.
               </p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-200 bg-white py-6 dark:border-zinc-800 dark:bg-zinc-900 text-center text-xs text-zinc-500">
-        <p className="font-mono">
-          CircuitDoctor • Build it. Debug it. Learn it. • Powered by Google AI Studio (Gemma & Gemini) & PostgreSQL.
-        </p>
-      </footer>
+        {/* Clean Footer */}
+        <footer className="pt-6 pb-4 border-t border-zinc-200 text-center text-xs text-zinc-400 font-mono dark:border-zinc-800">
+          CircuitDoctor AI Suite • Engineered with Google Gemma & PostgreSQL • Clean Minimal System
+        </footer>
+      </main>
     </div>
   );
 }

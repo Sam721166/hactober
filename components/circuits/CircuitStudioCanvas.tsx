@@ -438,7 +438,7 @@ export function CircuitStudioCanvas({
       <div className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-cyan-600" />
+            <Cpu className="h-4 w-4 text-zinc-900 dark:text-zinc-100" />
             <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
               {projectName}
             </span>
@@ -450,7 +450,7 @@ export function CircuitStudioCanvas({
           {designWarnings.length > 0 && (
             <span
               onClick={() => setActiveTab("warnings")}
-              className="cursor-pointer flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900/60"
+              className="cursor-pointer flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-800 border border-zinc-300 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700"
             >
               <AlertTriangle className="h-3 w-3" />
               <span>{designWarnings.length} Warnings</span>
@@ -467,7 +467,7 @@ export function CircuitStudioCanvas({
                 setIsSimulating(true);
                 setIsTerminalOpen(true);
               }}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 transition-all ring-1 ring-emerald-500/50"
+              className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all"
               title="Run interactive hardware simulation with real-time animations"
             >
               <Play className="h-3.5 w-3.5 fill-current" />
@@ -477,7 +477,7 @@ export function CircuitStudioCanvas({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setIsSimulating(false)}
-                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 transition-colors"
+                className="flex items-center gap-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 transition-colors"
                 title="Pause circuit simulation"
               >
                 <Pause className="h-3.5 w-3.5 fill-current" />
@@ -494,8 +494,8 @@ export function CircuitStudioCanvas({
                 <Square className="h-3 w-3 fill-current text-zinc-500" />
                 <span>Reset</span>
               </button>
-              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/60 animate-pulse">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 5V / 3.3V Rails Active
               </span>
             </div>
@@ -505,7 +505,7 @@ export function CircuitStudioCanvas({
             onClick={() => setIsTerminalOpen(!isTerminalOpen)}
             className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
               isTerminalOpen
-                ? "border-cyan-500 bg-cyan-50 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800 font-semibold"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-950 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100 font-semibold"
                 : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
             }`}
             title="Toggle Serial Monitor Terminal"
@@ -517,7 +517,7 @@ export function CircuitStudioCanvas({
           {(selectedNode || selectedEdge) && (
             <button
               onClick={handleDeleteSelected}
-              className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-400"
+              className="flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
               title="Delete selected item"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -536,7 +536,7 @@ export function CircuitStudioCanvas({
 
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 rounded-md bg-cyan-600 px-3 py-1 text-xs font-medium text-white shadow-sm hover:bg-cyan-500 transition-colors"
+            className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-colors"
           >
             <Save className="h-3.5 w-3.5" />
             <span>{saveStatus || "Save Circuit"}</span>
@@ -554,7 +554,7 @@ export function CircuitStudioCanvas({
               onClick={() => setActiveTab("library")}
               className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors ${
                 activeTab === "library"
-                  ? "border-cyan-600 text-cyan-600 font-semibold dark:text-cyan-400"
+                  ? "border-zinc-900 text-zinc-900 font-semibold dark:border-zinc-100 dark:text-zinc-100"
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
@@ -564,7 +564,7 @@ export function CircuitStudioCanvas({
               onClick={() => setActiveTab("inspector")}
               className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors ${
                 activeTab === "inspector"
-                  ? "border-cyan-600 text-cyan-600 font-semibold dark:text-cyan-400"
+                  ? "border-zinc-900 text-zinc-900 font-semibold dark:border-zinc-100 dark:text-zinc-100"
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
@@ -574,7 +574,7 @@ export function CircuitStudioCanvas({
               onClick={() => setActiveTab("warnings")}
               className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors ${
                 activeTab === "warnings"
-                  ? "border-amber-600 text-amber-600 font-semibold dark:text-amber-400"
+                  ? "border-zinc-900 text-zinc-900 font-semibold dark:border-zinc-100 dark:text-zinc-100"
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
@@ -596,7 +596,7 @@ export function CircuitStudioCanvas({
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
@@ -604,7 +604,7 @@ export function CircuitStudioCanvas({
                           </div>
                           <span className="font-medium truncate">{def.name}</span>
                         </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
                       </button>
                     );
                   })}
@@ -622,7 +622,7 @@ export function CircuitStudioCanvas({
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
@@ -630,7 +630,7 @@ export function CircuitStudioCanvas({
                           </div>
                           <span className="font-medium truncate">{def.name}</span>
                         </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
                       </button>
                     );
                   })}
@@ -648,7 +648,7 @@ export function CircuitStudioCanvas({
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
@@ -656,7 +656,7 @@ export function CircuitStudioCanvas({
                           </div>
                           <span className="font-medium truncate">{def.name}</span>
                         </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
                       </button>
                     );
                   })}
@@ -674,7 +674,7 @@ export function CircuitStudioCanvas({
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
@@ -682,7 +682,7 @@ export function CircuitStudioCanvas({
                           </div>
                           <span className="font-medium truncate">{def.name}</span>
                         </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
                       </button>
                     );
                   })}
@@ -749,11 +749,11 @@ export function CircuitStudioCanvas({
                       Selected Connection
                     </span>
                     <div className="mt-2 flex items-center gap-2 font-mono text-xs">
-                      <span className="font-bold text-cyan-600">
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">
                         {selectedEdge.source}:{selectedEdge.sourceHandle}
                       </span>
                       <ArrowRight className="h-3.5 w-3.5 text-zinc-400" />
-                      <span className="font-bold text-cyan-600">
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">
                         {selectedEdge.target}:{selectedEdge.targetHandle}
                       </span>
                     </div>

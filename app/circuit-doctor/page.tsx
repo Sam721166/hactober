@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Navbar } from "@/components/layout/Navbar";
 import {
   Activity,
   Upload,
@@ -18,6 +17,7 @@ import {
   ArrowRight,
   RotateCcw,
   Plus,
+  Loader2,
 } from "lucide-react";
 
 export default function CircuitDoctorPage() {
@@ -32,8 +32,7 @@ export default function CircuitDoctorPage() {
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<"hypotheses" | "observations" | "tests">("hypotheses");
-  const [testNotes, setTestNotes] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<"hypotheses" | "observations">("hypotheses");
   const [testOutcomes, setTestOutcomes] = useState<Record<string, string>>({});
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -133,47 +132,50 @@ export default function CircuitDoctorPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100">
-      <Navbar />
-
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-8 sm:px-6">
+    <div className="min-h-full bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-zinc-200 dark:border-zinc-800 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-zinc-200 dark:border-zinc-800 gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-600 text-white shadow-sm">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-900 text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-950">
                 <Activity className="h-4 w-4" />
               </span>
-              <h1 className="text-xl font-bold tracking-tight">Circuit Doctor</h1>
-              <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-semibold text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-400">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
+                Circuit Doctor
+              </h1>
+              <span className="rounded border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                 Multimodal Hardware Diagnostics
               </span>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
-              Upload physical circuit photographs, provide electrical symptoms, and execute evidence-based diagnostic procedures.
+              Upload physical circuit photographs, specify symptoms, and execute evidence-based diagnostic tests with expected multimeter readings.
             </p>
           </div>
 
           {analysis && (
             <button
               onClick={handleSaveSession}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 transition-all"
             >
-              <Save className="h-3.5 w-3.5 text-cyan-600" />
+              <Save className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
               <span>{savedSessionId ? "Saved (#" + savedSessionId.slice(-4) + ")" : "Save Investigation"}</span>
             </button>
           )}
         </div>
 
         {/* 2-Column Diagnostic Workbench */}
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12 flex-1">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Left Column: Upload & Context Setup */}
-          <div className="lg:col-span-5 space-y-5">
+          <div className="lg:col-span-5 space-y-4">
             {/* Image Upload Box */}
-            <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="font-mono text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                1. Circuit Photograph
-              </span>
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                  1. Circuit Photograph
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">JPEG, PNG, WebP</span>
+              </div>
 
               {selectedImage ? (
                 <div className="mt-3 relative rounded-lg border border-zinc-200 overflow-hidden bg-zinc-950 dark:border-zinc-800">
@@ -185,7 +187,7 @@ export default function CircuitDoctorPage() {
                   <div className="absolute bottom-2 right-2 flex gap-1">
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
+                      className="rounded bg-black/80 px-2 py-1 text-[11px] font-medium text-white hover:bg-black transition-colors"
                     >
                       Replace
                     </button>
@@ -194,7 +196,7 @@ export default function CircuitDoctorPage() {
                         setSelectedImage(null);
                         setAnalysis(null);
                       }}
-                      className="rounded bg-rose-600/80 px-2 py-1 text-[11px] text-white hover:bg-rose-700"
+                      className="rounded bg-zinc-800 px-2 py-1 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700 transition-colors"
                     >
                       Remove
                     </button>
@@ -210,14 +212,14 @@ export default function CircuitDoctorPage() {
                       handleImageSelect(e.dataTransfer.files[0]);
                     }
                   }}
-                  className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 p-8 text-center transition-colors hover:border-cyan-500 hover:bg-cyan-50/20 dark:border-zinc-700 dark:hover:border-cyan-500"
+                  className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 p-8 text-center transition-all hover:border-zinc-500 hover:bg-zinc-50/50 dark:border-zinc-700 dark:hover:border-zinc-500"
                 >
-                  <Upload className="h-8 w-8 text-zinc-400 mb-2" />
-                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  <Upload className="h-7 w-7 text-zinc-400 mb-2" />
+                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                     Click to upload or drag circuit photo here
                   </span>
                   <span className="text-[11px] text-zinc-400 mt-1">
-                    Supports high-resolution JPEG, PNG, WebP (Max 10MB)
+                    Clear top-down or 45° angle photograph (Max 10MB)
                   </span>
                 </div>
               )}
@@ -234,17 +236,17 @@ export default function CircuitDoctorPage() {
             </div>
 
             {/* Circuit Technical Context */}
-            <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 space-y-3 text-xs">
-              <span className="font-mono text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                2. Technical Context (Optional but Recommended)
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 space-y-3 text-xs">
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                2. Technical Symptoms & Context
               </span>
 
               <div>
-                <label className="text-[11px] font-medium text-zinc-500">Board / Microcontroller</label>
+                <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Target MCU Board</label>
                 <select
                   value={boardType}
                   onChange={(e) => setBoardType(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 >
                   <option value="ESP32">ESP32 DevKit V1 (3.3V Logic)</option>
                   <option value="Arduino Uno">Arduino Uno R3 (5V Logic)</option>
@@ -255,57 +257,66 @@ export default function CircuitDoctorPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-zinc-500">Known Connected Components</label>
+                <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Known Connected Components</label>
                 <input
                   type="text"
                   value={knownComponents}
                   onChange={(e) => setKnownComponents(e.target.value)}
                   placeholder="e.g. DHT22 sensor on GPIO 4, SSD1306 OLED, 5V Relay"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] font-medium text-zinc-500">Expected Behavior</label>
+                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Expected Behavior</label>
                   <textarea
                     rows={2}
                     value={expectedBehavior}
                     onChange={(e) => setExpectedBehavior(e.target.value)}
                     placeholder="e.g. OLED shows temperature"
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 p-2 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 p-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-zinc-500">Actual Behavior / Failure</label>
+                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Actual Failure / Symptom</label>
                   <textarea
                     rows={2}
                     value={actualBehavior}
                     onChange={(e) => setActualBehavior(e.target.value)}
-                    placeholder="e.g. Screen blank, board runs hot"
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 p-2 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                    placeholder="e.g. Screen blank, board gets hot"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 p-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-zinc-500">Firmware Code or Serial Error Log</label>
+                <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Firmware Code or Serial Log (Optional)</label>
                 <textarea
                   rows={3}
                   value={firmwareCode}
                   onChange={(e) => setFirmwareCode(e.target.value)}
                   placeholder="Paste snippet of setup(), pinMode(), or terminal error logs..."
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 p-2 font-mono text-[11px] dark:border-zinc-700 dark:bg-zinc-800"
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 p-2 font-mono text-[11px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
 
               <button
                 onClick={handleAnalyze}
                 disabled={!selectedImage || isAnalyzing}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-cyan-600 py-2.5 font-semibold text-white shadow-md hover:bg-cyan-500 disabled:opacity-50 transition-all text-xs"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-zinc-900 py-2.5 font-semibold text-white shadow-xs hover:bg-zinc-800 disabled:opacity-50 transition-all text-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
               >
-                <Sparkles className="h-4 w-4" />
-                <span>{isAnalyzing ? "Analyzing Circuit Photograph..." : "Run Circuit Doctor Diagnostics"}</span>
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Analyzing Circuit Photograph...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    <span>Run Circuit Doctor Diagnostics</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -313,20 +324,20 @@ export default function CircuitDoctorPage() {
           {/* Right Column: Evidence-Based Analysis & Diagnostic Procedure */}
           <div className="lg:col-span-7 flex flex-col">
             {isAnalyzing ? (
-              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-cyan-600 border-t-transparent mb-4" />
-                <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                  Gemini Vision Analyzing Circuit Topology...
+              <div className="flex h-full min-h-[460px] flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+                <Loader2 className="h-8 w-8 animate-spin text-zinc-900 dark:text-zinc-100 mb-4" />
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  Multimodal AI Inspecting Circuit Topology...
                 </h3>
-                <p className="text-xs text-zinc-400 mt-1 max-w-sm">
+                <p className="text-xs text-zinc-500 mt-1 max-w-sm">
                   Detecting components, tracing visible wire routes, identifying power rails, and formulating testable hypotheses.
                 </p>
               </div>
             ) : analysis ? (
-              <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 flex-1 flex flex-col space-y-4">
+              <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 flex-1 flex flex-col space-y-4">
                 {/* Summary Banner */}
-                <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-3.5 text-xs dark:border-cyan-900/60 dark:bg-cyan-950/30">
-                  <div className="flex items-center gap-2 text-cyan-800 dark:text-cyan-300 font-bold">
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3.5 text-xs dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold font-mono">
                     <Activity className="h-4 w-4" />
                     <span>Diagnostic Overview</span>
                   </div>
@@ -337,22 +348,22 @@ export default function CircuitDoctorPage() {
 
                 {/* Safety Warning if present */}
                 {analysis.safetyWarnings && analysis.safetyWarnings.length > 0 && (
-                  <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
-                    <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex items-start gap-2.5 rounded-lg border border-zinc-300 bg-zinc-100/70 p-3 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-zinc-900 dark:text-zinc-100 mt-0.5" />
                     <div>
                       <span className="font-bold">Hardware Safety Precaution:</span>
-                      <p className="mt-0.5">{analysis.safetyWarnings[0]}</p>
+                      <p className="mt-0.5 text-zinc-600 dark:text-zinc-300">{analysis.safetyWarnings[0]}</p>
                     </div>
                   </div>
                 )}
 
                 {/* Tabs */}
-                <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs">
+                <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs gap-1">
                   <button
                     onClick={() => setActiveTab("hypotheses")}
-                    className={`py-2 px-3 font-semibold border-b-2 transition-colors ${
+                    className={`py-2 px-3 font-medium border-b-2 transition-colors ${
                       activeTab === "hypotheses"
-                        ? "border-cyan-600 text-cyan-600"
+                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
                         : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
                     }`}
                   >
@@ -360,9 +371,9 @@ export default function CircuitDoctorPage() {
                   </button>
                   <button
                     onClick={() => setActiveTab("observations")}
-                    className={`py-2 px-3 font-semibold border-b-2 transition-colors ${
+                    className={`py-2 px-3 font-medium border-b-2 transition-colors ${
                       activeTab === "observations"
-                        ? "border-cyan-600 text-cyan-600"
+                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
                         : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
                     }`}
                   >
@@ -378,21 +389,13 @@ export default function CircuitDoctorPage() {
                       return (
                         <div
                           key={fault.id || index}
-                          className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/40 text-xs space-y-2.5"
+                          className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-800/40 text-xs space-y-2.5"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                            <span className="font-bold text-xs text-zinc-950 dark:text-zinc-100 font-mono">
                               {fault.title}
                             </span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                fault.confidence === "High"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400"
-                                  : fault.confidence === "Medium"
-                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
-                                  : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"
-                              }`}
-                            >
+                            <span className="rounded border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                               {fault.confidence} Confidence
                             </span>
                           </div>
@@ -401,20 +404,20 @@ export default function CircuitDoctorPage() {
                             {fault.explanation}
                           </p>
 
-                          <div className="rounded-lg bg-white p-2.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 space-y-1.5 font-mono text-[11px]">
+                          <div className="rounded-lg bg-white p-3 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 space-y-2 font-mono text-[11px]">
                             <div>
-                              <span className="text-cyan-700 dark:text-cyan-400 font-semibold">
+                              <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
                                 Recommended Diagnostic Test:
                               </span>
-                              <p className="text-zinc-800 dark:text-zinc-200 mt-0.5">
+                              <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">
                                 {fault.recommendedTest}
                               </p>
                             </div>
-                            <div>
-                              <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                                Expected Result:
+                            <div className="pt-1.5 border-t border-zinc-100 dark:border-zinc-800">
+                              <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
+                                Expected Multimeter Reading:
                               </span>
-                              <p className="text-zinc-800 dark:text-zinc-200 mt-0.5">
+                              <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">
                                 {fault.expectedResult}
                               </p>
                             </div>
@@ -430,8 +433,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Passed")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Passed"
-                                    ? "bg-emerald-600 text-white border-emerald-600"
-                                    : "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Passed
@@ -440,8 +443,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Failed")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Failed"
-                                    ? "bg-rose-600 text-white border-rose-600"
-                                    : "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Failed
@@ -450,8 +453,8 @@ export default function CircuitDoctorPage() {
                                 onClick={() => handleRecordTest(fault.id, "Inconclusive")}
                                 className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-all ${
                                   outcome === "Inconclusive"
-                                    ? "bg-amber-600 text-white border-amber-600"
-                                    : "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-950"
+                                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                 }`}
                               >
                                 Inconclusive
@@ -470,13 +473,13 @@ export default function CircuitDoctorPage() {
                     {analysis.visibleObservations?.map((obs: any, idx: number) => (
                       <div
                         key={idx}
-                        className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
+                        className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                          <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                             {obs.description}
                           </span>
-                          <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-mono text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                          <span className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[9px] font-mono text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                             {obs.confidence} Evidence
                           </span>
                         </div>
@@ -487,7 +490,7 @@ export default function CircuitDoctorPage() {
                     ))}
 
                     <div className="pt-2">
-                      <span className="font-mono text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
                         Identified Components
                       </span>
                       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -496,10 +499,10 @@ export default function CircuitDoctorPage() {
                             key={idx}
                             className="rounded border border-zinc-200 bg-white p-2 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-900"
                           >
-                            <span className="font-bold text-zinc-800 dark:text-zinc-200">
+                            <span className="font-bold text-zinc-900 dark:text-zinc-100">
                               {comp.name}
                             </span>
-                            <span className="block text-[10px] text-cyan-600 mt-0.5">
+                            <span className="block text-[10px] text-zinc-500 mt-0.5">
                               Status: {comp.status}
                             </span>
                           </div>
@@ -510,35 +513,35 @@ export default function CircuitDoctorPage() {
                 )}
               </div>
             ) : analysisError ? (
-              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50/50 p-8 text-center text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
-                <AlertTriangle className="h-10 w-10 text-amber-600 dark:text-amber-400 mb-3" />
-                <h3 className="text-sm font-bold tracking-tight">AI Vision Service Notice</h3>
-                <p className="text-xs text-amber-700 dark:text-amber-400/90 mt-1.5 max-w-md leading-relaxed">
+              <div className="flex h-full min-h-[460px] flex-col items-center justify-center rounded-xl border border-zinc-300 bg-zinc-50 p-8 text-center text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+                <AlertTriangle className="h-8 w-8 text-zinc-900 dark:text-zinc-100 mb-3" />
+                <h3 className="text-sm font-bold tracking-tight">AI Vision Notice</h3>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1.5 max-w-md leading-relaxed">
                   {analysisError}
                 </p>
                 <div className="mt-4 flex items-center gap-2">
                   <button
                     onClick={handleAnalyze}
-                    className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-500 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     <span>Retry Analysis</span>
                   </button>
                   <button
                     onClick={() => setAnalysisError(null)}
-                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-300"
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                   >
                     Dismiss
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 text-center text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
-                <Activity className="h-10 w-10 text-zinc-300 dark:text-zinc-700 mb-3" />
-                <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              <div className="flex h-full min-h-[460px] flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
+                <Activity className="h-8 w-8 text-zinc-300 dark:text-zinc-700 mb-3" />
+                <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
                   Ready for Circuit Diagnosis
                 </h3>
-                <p className="text-xs text-zinc-400 mt-1 max-w-sm">
+                <p className="text-xs text-zinc-500 mt-1 max-w-sm">
                   Upload a photo of your hardware setup on the left to begin an evidence-based troubleshooting investigation.
                 </p>
               </div>

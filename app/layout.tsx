@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AppShell } from "@/components/layout/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gemma AI Studio | Google Gemma Free Models",
+  title: "CircuitDoctor — AI Hardware Engineering Platform",
   description:
-    "Interactive playground and chat assistant powered by Google Gemma free open weights models (Gemma 4 26B & 31B).",
+    "Minimal black & white AI hardware engineering workspace. Build embedded projects from scratch, simulate circuits visually, and troubleshoot physical electronics.",
 };
 
 export default function RootLayout({
@@ -26,10 +27,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full dark antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 selection:bg-indigo-500/30 selection:text-indigo-200">
-        {children}
+      <body className="h-full bg-zinc-50 text-zinc-900 selection:bg-zinc-900 selection:text-white dark:bg-zinc-950 dark:text-zinc-100">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
