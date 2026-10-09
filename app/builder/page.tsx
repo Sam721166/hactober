@@ -1,25 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CircuitStudioCanvas } from "@/components/circuits/CircuitStudioCanvas";
 import {
   Sparkles,
   Cpu,
   Layers,
-  ArrowRight,
   CheckCircle2,
-  AlertCircle,
-  FileCode,
-  ListOrdered,
   Save,
-  Activity,
-  Code2,
   Copy,
   Check,
-  Play,
-  ExternalLink,
-  ShieldCheck,
   Loader2,
 } from "lucide-react";
 
@@ -390,27 +381,17 @@ function ProjectBuilderContent() {
                   </button>
                 </div>
 
-                {/* Tab 1: Circuit Diagram & Live Simulation */}
+                {/* Tab 1: Minimal Circuit Diagram & Live Simulation */}
                 {activeTab === "circuit" && (
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg bg-zinc-50 p-2.5 border border-zinc-200 dark:bg-zinc-800/40 dark:border-zinc-800 text-xs">
-                      <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-200">
-                        <Activity className="h-3.5 w-3.5" />
-                        <span>Interactive Visual Circuit Diagram & Hardware Simulation</span>
-                      </div>
-                      <button
-                        onClick={handleOpenInStudio}
-                        className="flex items-center gap-1.5 rounded-md bg-sky-600 hover:bg-sky-500 px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition-all self-start sm:self-auto"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        <span>Full Studio Canvas</span>
-                      </button>
-                    </div>
-
-                    <div className="h-[460px] w-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative bg-zinc-50 dark:bg-zinc-950">
+                  <div className="space-y-3">
+                    <div className="h-[540px] sm:h-[600px] w-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative bg-zinc-50 dark:bg-zinc-950 shadow-xs">
                       <CircuitStudioCanvas
+                        key={generatedPlan.title || "circuit-canvas"}
                         initialCircuit={generatedPlan.circuit}
                         projectName={generatedPlan.title}
+                        diagramOnly={true}
+                        allowSimulation={true}
+                        onOpenStudio={handleOpenInStudio}
                       />
                     </div>
                   </div>
