@@ -13,10 +13,13 @@ import {
   Edge,
   Node,
   MarkerType,
+  ConnectionMode,
+  ConnectionLineType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { HardwareNode } from "./HardwareNode";
+import { ComponentArtwork } from "./ComponentArtwork";
 import { COMPONENT_DEFINITIONS, ComponentDefinition } from "@/lib/circuits/registry";
 import {
   Cpu,
@@ -97,20 +100,46 @@ export function CircuitStudioCanvas({
     });
   }, [initialCircuit]);
 
+  // Helper for real-world hardware jumper wire colors based on pin semantics
+  const getWireColor = (pinId?: string | null): string => {
+    if (!pinId) return "#06b6d4";
+    const p = pinId.toUpperCase();
+    if (p.includes("VCC") || p.includes("5V") || p.includes("3V3") || p.includes("VIN") || p.includes("12V") || p.includes("ANODE") || p.includes("POS")) {
+      return "#ef4444"; // Red for Power rails
+    }
+    if (p.includes("GND") || p.includes("CATHODE")) {
+      return "#3f3f46"; // Dark slate for Ground
+    }
+    if (p.includes("SDA") || p.includes("SCL")) {
+      return "#a855f7"; // Purple for I2C data/clock
+    }
+    if (p.includes("A0") || p.includes("A1") || p.includes("ADC") || p.includes("AOUT") || p.includes("VOUT")) {
+      return "#f59e0b"; // Amber for Analog inputs/outputs
+    }
+    if (p.includes("PWM") || p.includes("SIG")) {
+      return "#10b981"; // Emerald for PWM / Servo
+    }
+    return "#06b6d4"; // Cyan for Digital signals
+  };
+
   // Convert initial connections to React Flow edges
   const initialEdges: Edge[] = useMemo(() => {
     if (!initialCircuit?.connections) return [];
-    return initialCircuit.connections.map((c) => ({
-      id: c.id,
-      source: c.sourceComponentId,
-      sourceHandle: c.sourcePin,
-      target: c.targetComponentId,
-      targetHandle: c.targetPin,
-      animated: c.status === "proposed",
-      style: { stroke: "#06b6d4", strokeWidth: 2 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
-      data: { status: c.status || "confirmed", evidence: c.evidence || "User connected" },
-    }));
+    return initialCircuit.connections.map((c) => {
+      const wireColor = getWireColor(c.sourcePin);
+      return {
+        id: c.id,
+        source: c.sourceComponentId,
+        sourceHandle: c.sourcePin,
+        target: c.targetComponentId,
+        targetHandle: c.targetPin,
+        type: "smoothstep",
+        animated: c.status === "proposed",
+        style: { stroke: wireColor, strokeWidth: 2.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: wireColor },
+        data: { status: c.status || "confirmed", evidence: c.evidence || "User connected" },
+      };
+    });
   }, [initialCircuit]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -125,16 +154,19 @@ export function CircuitStudioCanvas({
     (params: Connection) => {
       if (!params.source || !params.target) return;
       if (params.source === params.target) {
-        alert("Cannot connect a component to itself.");
+        alert("Cannot connect a component pin to itself.");
         return;
       }
+
+      const wireColor = getWireColor(params.sourceHandle);
 
       const newEdge: Edge = {
         ...params,
         id: `wire-${Date.now()}`,
+        type: "smoothstep",
         animated: true,
-        style: { stroke: "#06b6d4", strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
+        style: { stroke: wireColor, strokeWidth: 2.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: wireColor },
         data: { status: "user confirmed", evidence: "Connected in Circuit Studio" },
       };
 
@@ -400,17 +432,22 @@ export function CircuitStudioCanvas({
                 <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                   Microcontrollers
                 </span>
-                <div className="mt-1.5 space-y-1">
+                <div className="mt-1.5 space-y-1.5">
                   {["esp32", "arduino_uno", "arduino_nano", "pico"].map((type) => {
                     const def = COMPONENT_DEFINITIONS[type];
                     return (
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
                       >
-                        <span className="font-medium">{def.name}</span>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
+                            <ComponentArtwork type={type} size="sm" />
+                          </div>
+                          <span className="font-medium truncate">{def.name}</span>
+                        </div>
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
                       </button>
                     );
                   })}
@@ -421,17 +458,22 @@ export function CircuitStudioCanvas({
                 <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                   Sensors
                 </span>
-                <div className="mt-1.5 space-y-1">
+                <div className="mt-1.5 space-y-1.5">
                   {["dht22_sensor", "ultrasonic_sensor", "soil_moisture_sensor", "ldr_sensor"].map((type) => {
                     const def = COMPONENT_DEFINITIONS[type];
                     return (
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
                       >
-                        <span className="font-medium">{def.name}</span>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
+                            <ComponentArtwork type={type} size="sm" />
+                          </div>
+                          <span className="font-medium truncate">{def.name}</span>
+                        </div>
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
                       </button>
                     );
                   })}
@@ -442,17 +484,22 @@ export function CircuitStudioCanvas({
                 <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                   Actuators & Displays
                 </span>
-                <div className="mt-1.5 space-y-1">
+                <div className="mt-1.5 space-y-1.5">
                   {["oled_display", "servo_motor", "motor_driver", "relay_module", "buzzer"].map((type) => {
                     const def = COMPONENT_DEFINITIONS[type];
                     return (
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
                       >
-                        <span className="font-medium">{def.name}</span>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
+                            <ComponentArtwork type={type} size="sm" />
+                          </div>
+                          <span className="font-medium truncate">{def.name}</span>
+                        </div>
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
                       </button>
                     );
                   })}
@@ -463,17 +510,22 @@ export function CircuitStudioCanvas({
                 <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                   Passives
                 </span>
-                <div className="mt-1.5 space-y-1">
+                <div className="mt-1.5 space-y-1.5">
                   {["led", "resistor", "push_button"].map((type) => {
                     const def = COMPONENT_DEFINITIONS[type];
                     return (
                       <button
                         key={type}
                         onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-cyan-50/50 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-500/60 transition-all group"
                       >
-                        <span className="font-medium">{def.name}</span>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
+                            <ComponentArtwork type={type} size="sm" />
+                          </div>
+                          <span className="font-medium truncate">{def.name}</span>
+                        </div>
+                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 shrink-0" />
                       </button>
                     );
                   })}
@@ -491,12 +543,19 @@ export function CircuitStudioCanvas({
                     <span className="font-mono text-[10px] uppercase font-bold text-zinc-400">
                       Selected Component
                     </span>
-                    <h4 className="font-mono font-bold text-sm text-zinc-900 dark:text-zinc-100 mt-1">
-                      {String((selectedNode.data as any)?.label || "")}
-                    </h4>
-                    <p className="font-mono text-[10px] text-zinc-500">
-                      ID: {selectedNode.id}
-                    </p>
+                    <div className="mt-2 flex items-center gap-2.5">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white p-1 border border-zinc-200 shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
+                        <ComponentArtwork type={(selectedNode.data as any)?.type || ""} size="md" />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <h4 className="font-mono font-bold text-sm text-zinc-900 dark:text-zinc-100 truncate">
+                          {String((selectedNode.data as any)?.label || "")}
+                        </h4>
+                        <span className="font-mono text-[10px] text-zinc-500 truncate">
+                          ID: {selectedNode.id}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div>
@@ -596,6 +655,16 @@ export function CircuitStudioCanvas({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            connectionMode={ConnectionMode.Loose}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineStyle={{ stroke: "#06b6d4", strokeWidth: 2.5 }}
+            isValidConnection={(c) => c.source !== c.target}
+            defaultEdgeOptions={{
+              type: "smoothstep",
+              animated: true,
+              style: { stroke: "#06b6d4", strokeWidth: 2.5 },
+              markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
+            }}
             onNodeClick={(_, node) => {
               setSelectedNode(node);
               setSelectedEdge(null);
