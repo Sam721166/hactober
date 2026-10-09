@@ -141,7 +141,7 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
         {/* Left pins */}
         <div className="flex flex-col gap-2">
           {leftPins.map((pin) => (
-            <div key={pin.id} className="relative flex items-center gap-2">
+            <div key={pin.id} className="relative flex items-center gap-1.5">
               <Handle
                 type="source"
                 position={Position.Left}
@@ -149,6 +149,21 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
                 isConnectable={true}
                 className={`!h-3 !w-3 !-left-4.5 !rounded-full !border-2 ${PIN_COLORS[pin.type] || "!bg-zinc-400"} hover:!scale-125 transition-transform !cursor-crosshair shadow-sm`}
                 title={`${pin.name} (${pin.type.toUpperCase()})`}
+              />
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  pin.type === "power"
+                    ? "bg-rose-500"
+                    : pin.type === "gnd"
+                    ? "bg-zinc-800 dark:bg-zinc-300"
+                    : pin.type === "analog"
+                    ? "bg-amber-500"
+                    : pin.type === "pwm"
+                    ? "bg-emerald-500"
+                    : pin.type === "i2c"
+                    ? "bg-purple-500"
+                    : "bg-cyan-500"
+                }`}
               />
               <span className="text-zinc-700 dark:text-zinc-300 select-none font-medium text-[10px]">{pin.name}</span>
             </div>
@@ -158,8 +173,23 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
         {/* Right pins */}
         <div className="flex flex-col gap-2 items-end">
           {rightPins.map((pin) => (
-            <div key={pin.id} className="relative flex items-center gap-2">
+            <div key={pin.id} className="relative flex items-center gap-1.5">
               <span className="text-zinc-700 dark:text-zinc-300 select-none font-medium text-[10px]">{pin.name}</span>
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  pin.type === "power"
+                    ? "bg-rose-500"
+                    : pin.type === "gnd"
+                    ? "bg-zinc-800 dark:bg-zinc-300"
+                    : pin.type === "analog"
+                    ? "bg-amber-500"
+                    : pin.type === "pwm"
+                    ? "bg-emerald-500"
+                    : pin.type === "i2c"
+                    ? "bg-purple-500"
+                    : "bg-cyan-500"
+                }`}
+              />
               <Handle
                 type="source"
                 position={Position.Right}

@@ -186,10 +186,10 @@ export function ProjectWorkspaceClient({ id }: { id: string }) {
         <div className="flex items-center gap-2">
           <Link
             href={`/circuit-doctor?board=${encodeURIComponent(project.board)}`}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/70 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors shadow-xs"
           >
-            <Activity className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Diagnose</span>
+            <Activity className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+            <span className="hidden sm:inline">Diagnose with Doctor</span>
           </Link>
         </div>
       </div>
@@ -376,12 +376,12 @@ export function ProjectWorkspaceClient({ id }: { id: string }) {
                             </td>
                             <td className="p-2.5">
                               {matchingFw ? (
-                                <span className="inline-flex items-center gap-1 text-zinc-900 dark:text-zinc-100 font-bold">
-                                  <CheckCircle2 className="h-3 w-3" /> Matched
+                                <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                  <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Matched
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-zinc-400">
-                                  <AlertTriangle className="h-3 w-3" /> Unreferenced
+                                <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> Unreferenced
                                 </span>
                               )}
                             </td>

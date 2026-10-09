@@ -193,7 +193,13 @@ export default function ComponentsCataloguePage() {
                       )}
 
                       {/* Live Interactive Cue on Hover */}
-                      <span className="absolute top-2 right-2 rounded-full border border-zinc-200/60 bg-white/80 px-2 py-0.5 text-[9px] font-mono text-zinc-500 backdrop-blur-xs dark:border-zinc-700/60 dark:bg-zinc-900/80 dark:text-zinc-400">
+                      <span
+                        className={`absolute top-2 right-2 rounded-full border px-2 py-0.5 text-[9px] font-mono backdrop-blur-xs transition-colors ${
+                          isHovered
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 font-bold dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                            : "border-zinc-200/60 bg-white/80 text-zinc-500 dark:border-zinc-700/60 dark:bg-zinc-900/80 dark:text-zinc-400"
+                        }`}
+                      >
                         {isHovered ? "⚡ Active" : "Schematic"}
                       </span>
                     </div>
@@ -201,11 +207,23 @@ export default function ComponentsCataloguePage() {
                     {/* Metadata Header */}
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-mono text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
+                        <span
+                          className={`rounded border px-2 py-0.5 text-[10px] font-mono font-medium ${
+                            comp.category === "Development Boards"
+                              ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800"
+                              : comp.category === "Sensors"
+                              ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800"
+                              : comp.category === "Motors & Actuators"
+                              ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                              : comp.category === "Displays"
+                              ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
+                              : "bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
+                          }`}
+                        >
                           {comp.category}
                         </span>
                         {comp.approx_price_inr && (
-                          <span className="font-mono text-xs font-bold text-zinc-950 dark:text-zinc-100">
+                          <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
                             ₹{comp.approx_price_inr}
                           </span>
                         )}
@@ -225,7 +243,7 @@ export default function ComponentsCataloguePage() {
                         <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                           Interface:{" "}
                         </span>
-                        {comp.interfaces}
+                        <span className="text-sky-700 dark:text-sky-400 font-medium">{comp.interfaces}</span>
                       </div>
                     )}
 
@@ -248,16 +266,16 @@ export default function ComponentsCataloguePage() {
                   <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                     <Link
                       href={`/builder?prompt=${encodeURIComponent("Build a project using " + comp.name)}`}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
+                      className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 hover:text-violet-700 dark:text-zinc-100 dark:hover:text-violet-300 transition-colors"
                     >
-                      <Sparkles className="h-3 w-3 text-zinc-500" />
+                      <Sparkles className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
                       <span>Build Project</span>
                       <ArrowRight className="h-3 w-3" />
                     </Link>
 
                     <Link
                       href="/circuit-studio"
-                      className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                      className="text-[11px] font-mono text-zinc-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
                     >
                       Studio Canvas
                     </Link>

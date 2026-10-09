@@ -61,9 +61,9 @@ export default function WorkspacesPage() {
 
           <Link
             href="/builder"
-            className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all self-start sm:self-auto"
+            className="flex items-center gap-1.5 rounded-lg bg-zinc-900 hover:bg-violet-950 px-3.5 py-2 text-xs font-semibold text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-violet-100 transition-all self-start sm:self-auto ring-1 ring-violet-500/30"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5 text-violet-400 dark:text-violet-600" />
             <span>Create New Project</span>
           </Link>
         </div>
@@ -126,13 +126,19 @@ export default function WorkspacesPage() {
                   <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                     <Link
                       href={`/projects/${proj.id}`}
-                      className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
+                      className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:text-violet-700 dark:text-zinc-100 dark:hover:text-violet-300 transition-colors"
                     >
                       <span>Open Workspace</span>
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
 
-                    <span className="text-[10px] text-zinc-400 font-mono">
+                    <span
+                      className={`text-[9px] font-mono rounded px-1.5 py-0.2 border ${
+                        proj.isSample
+                          ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-semibold"
+                      }`}
+                    >
                       {proj.isSample ? "Sample" : "Custom"}
                     </span>
                   </div>

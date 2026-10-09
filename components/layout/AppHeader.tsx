@@ -116,18 +116,18 @@ export function AppHeader({
         </button>
 
         {/* Database Status Pill */}
-        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-[10px] font-mono font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/70 px-2.5 py-0.5 text-[10px] font-mono font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <Database className="h-3 w-3 text-zinc-500" />
-          <span>PostgreSQL Active</span>
+          <Database className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+          <span className="font-semibold">PostgreSQL Active</span>
         </div>
 
         {/* Quick New Project Button */}
         <Link
           href="/builder"
-          className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all"
+          className="flex items-center gap-1.5 rounded-lg bg-zinc-900 hover:bg-violet-950 px-3 py-1.5 text-xs font-semibold text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-violet-100 transition-all ring-1 ring-violet-500/20"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5 text-violet-400 dark:text-violet-600" />
           <span className="hidden sm:inline">New Project</span>
         </Link>
       </div>

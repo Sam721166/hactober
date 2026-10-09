@@ -467,9 +467,13 @@ export function CircuitStudioCanvas({
                 setIsSimulating(true);
                 setIsTerminalOpen(true);
               }}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-500 transition-all ring-1 ring-emerald-500/40"
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-500 transition-all ring-1 ring-emerald-400/40 hover:scale-[1.02]"
               title="Run interactive hardware simulation with real-time animations"
             >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+              </span>
               <Play className="h-3.5 w-3.5 fill-current" />
               <span>Run Simulation</span>
             </button>
@@ -477,7 +481,7 @@ export function CircuitStudioCanvas({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setIsSimulating(false)}
-                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-amber-300/40"
                 title="Pause circuit simulation"
               >
                 <Pause className="h-3.5 w-3.5 fill-current" />
@@ -488,13 +492,13 @@ export function CircuitStudioCanvas({
                   setIsSimulating(false);
                   setSimTick(0);
                 }}
-                className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
                 title="Reset simulation"
               >
                 <Square className="h-3 w-3 fill-current text-zinc-500" />
                 <span>Reset</span>
               </button>
-              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 animate-pulse">
+              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
                 5V / 3.3V Rails Active
               </span>
@@ -510,24 +514,24 @@ export function CircuitStudioCanvas({
             }`}
             title="Toggle Serial Monitor Terminal"
           >
-            <Terminal className="h-3.5 w-3.5" />
+            <Terminal className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
             <span className="hidden md:inline">Serial Monitor</span>
           </button>
 
           {(selectedNode || selectedEdge) && (
             <button
               onClick={handleDeleteSelected}
-              className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-400 transition-colors"
+              className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
               title="Delete selected item"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
               <span>Delete</span>
             </button>
           )}
 
           <button
             onClick={handleExportJson}
-            className="flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            className="flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
             title="Export circuit data as JSON"
           >
             <Download className="h-3.5 w-3.5" />
@@ -536,7 +540,11 @@ export function CircuitStudioCanvas({
 
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-colors"
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-all shadow-xs ${
+              saveStatus
+                ? "bg-emerald-600 text-white ring-1 ring-emerald-400"
+                : "bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+            }`}
           >
             <Save className="h-3.5 w-3.5" />
             <span>{saveStatus || "Save Circuit"}</span>
@@ -572,13 +580,18 @@ export function CircuitStudioCanvas({
             </button>
             <button
               onClick={() => setActiveTab("warnings")}
-              className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors ${
+              className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors flex items-center justify-center gap-1 ${
                 activeTab === "warnings"
-                  ? "border-zinc-900 text-zinc-900 font-semibold dark:border-zinc-100 dark:text-zinc-100"
+                  ? "border-amber-500 text-amber-700 dark:text-amber-400 font-semibold"
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
-              Warnings ({designWarnings.length})
+              <span>Warnings</span>
+              {designWarnings.length > 0 && (
+                <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-700 px-1.5 py-0.2 text-[10px] font-bold">
+                  {designWarnings.length}
+                </span>
+              )}
             </button>
           </div>
 

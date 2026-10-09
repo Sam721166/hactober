@@ -99,9 +99,9 @@ export default function DiscoverProjectsPage() {
 
           <button
             onClick={() => setShowIdeaModal(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white transition-all self-start sm:self-auto"
+            className="flex items-center gap-1.5 rounded-lg bg-zinc-900 hover:bg-violet-950 px-3.5 py-2 text-xs font-semibold text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-violet-100 transition-all self-start sm:self-auto ring-1 ring-violet-500/30"
           >
-            <Sparkles className="h-3.5 w-3.5" />
+            <Sparkles className="h-3.5 w-3.5 text-violet-400 dark:text-violet-600" />
             <span>AI Idea Generator</span>
           </button>
         </div>
@@ -155,53 +155,62 @@ export default function DiscoverProjectsPage() {
               No matching projects found.
             </div>
           ) : (
-            projects.map((proj) => (
-              <div
-                key={proj.id}
-                className="group flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-xs transition-all hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-mono font-bold text-zinc-900 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-                      {proj.board}
-                    </span>
-                    <span className="font-mono text-[10px] text-zinc-400">
-                      {proj.difficulty}
-                    </span>
+            projects.map((proj) => {
+              const diffBadge =
+                proj.difficulty === "Beginner"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+                  : proj.difficulty === "Intermediate"
+                  ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
+                  : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800";
+
+              return (
+                <div
+                  key={proj.id}
+                  className="group flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-xs transition-all hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-mono font-bold text-zinc-900 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
+                        {proj.board}
+                      </span>
+                      <span className={`rounded border px-1.5 py-0.5 text-[10px] font-mono font-medium ${diffBadge}`}>
+                        {proj.difficulty}
+                      </span>
+                    </div>
+
+                    <h3 className="mt-2.5 text-sm font-bold text-zinc-950 dark:text-zinc-100">
+                      {proj.title}
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-500 line-clamp-2 leading-relaxed">
+                      {proj.description}
+                    </p>
+
+                    <div className="mt-3 flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">Est: ₹{proj.budgetInr || "1200"}</span>
+                      <span>•</span>
+                      <span>{proj.circuit?.components?.length || 4} components</span>
+                    </div>
                   </div>
 
-                  <h3 className="mt-2.5 text-sm font-bold text-zinc-950 dark:text-zinc-100">
-                    {proj.title}
-                  </h3>
-                  <p className="mt-1 text-xs text-zinc-500 line-clamp-2 leading-relaxed">
-                    {proj.description}
-                  </p>
+                  <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                    <Link
+                      href={`/projects/${proj.id}`}
+                      className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:text-violet-700 dark:text-zinc-100 dark:hover:text-violet-300 transition-colors"
+                    >
+                      <span>Open Workspace</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
 
-                  <div className="mt-3 flex items-center gap-2 text-[11px] font-mono text-zinc-400">
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">Est: ₹{proj.budgetInr || "1200"}</span>
-                    <span>•</span>
-                    <span>{proj.circuit?.components?.length || 4} components</span>
+                    <Link
+                      href={`/circuit-studio`}
+                      className="text-[11px] font-mono text-zinc-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+                    >
+                      Studio Canvas
+                    </Link>
                   </div>
                 </div>
-
-                <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                  <Link
-                    href={`/projects/${proj.id}`}
-                    className="flex items-center gap-1 text-xs font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
-                  >
-                    <span>Open Workspace</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-
-                  <Link
-                    href={`/circuit-studio`}
-                    className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
-                  >
-                    Studio Canvas
-                  </Link>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </main>
