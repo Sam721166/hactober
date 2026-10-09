@@ -36,6 +36,7 @@ export default function CircuitDoctorPage() {
   const [testNotes, setTestNotes] = useState<Record<string, string>>({});
   const [testOutcomes, setTestOutcomes] = useState<Record<string, string>>({});
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,6 +56,7 @@ export default function CircuitDoctorPage() {
     reader.onload = (e) => {
       setSelectedImage(e.target?.result as string);
       setAnalysis(null);
+      setAnalysisError(null);
     };
     reader.readAsDataURL(file);
   };
@@ -67,6 +69,7 @@ export default function CircuitDoctorPage() {
     }
 
     setIsAnalyzing(true);
+    setAnalysisError(null);
     try {
       const res = await fetch("/api/doctor/analyze", {
         method: "POST",
@@ -85,11 +88,12 @@ export default function CircuitDoctorPage() {
       const data = await res.json();
       if (data.ok) {
         setAnalysis(data.analysis);
+        setAnalysisError(null);
       } else {
-        alert(`Analysis Error: ${data.error}`);
+        setAnalysisError(data.error || "Analysis request failed.");
       }
     } catch (err: any) {
-      alert(`Network error: ${err.message}`);
+      setAnalysisError(`Network error: ${err.message}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -504,6 +508,29 @@ export default function CircuitDoctorPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            ) : analysisError ? (
+              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50/50 p-8 text-center text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                <AlertTriangle className="h-10 w-10 text-amber-600 dark:text-amber-400 mb-3" />
+                <h3 className="text-sm font-bold tracking-tight">AI Vision Service Notice</h3>
+                <p className="text-xs text-amber-700 dark:text-amber-400/90 mt-1.5 max-w-md leading-relaxed">
+                  {analysisError}
+                </p>
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    onClick={handleAnalyze}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-500 transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Retry Analysis</span>
+                  </button>
+                  <button
+                    onClick={() => setAnalysisError(null)}
+                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-300"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 text-center text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
