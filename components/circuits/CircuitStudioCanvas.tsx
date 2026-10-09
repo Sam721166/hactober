@@ -1260,12 +1260,13 @@ export function CircuitStudioCanvas({
             }}
             nodeTypes={nodeTypes}
             fitView
+            colorMode="system"
             className="bg-zinc-50 dark:bg-zinc-950"
           >
             <Background gap={16} size={1} color="#71717a" className="opacity-20" />
             <Controls
               position="top-left"
-              className="!bg-white !border-zinc-200 !shadow-xs dark:!bg-zinc-900 dark:!border-zinc-800"
+              className="!bg-white !border-zinc-200 !shadow-xs dark:!bg-zinc-900 dark:!border-zinc-800 rounded-lg overflow-hidden [&_button]:!bg-white [&_button]:!border-b-zinc-200 [&_button]:!text-zinc-900 [&_button_svg]:!fill-zinc-900 hover:[&_button]:!bg-zinc-100 hover:[&_button_svg]:!fill-black dark:[&_button]:!bg-zinc-900 dark:[&_button]:!border-b-zinc-800 dark:[&_button]:!text-zinc-100 dark:[&_button_svg]:!fill-zinc-100 dark:hover:[&_button]:!bg-zinc-800 dark:hover:[&_button_svg]:!fill-white [&_button:last-child]:!border-b-0"
             />
             {!diagramOnly && (
               <MiniMap
