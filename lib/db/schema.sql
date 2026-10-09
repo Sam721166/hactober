@@ -1,0 +1,122 @@
+-- CircuitDoctor Database Schema DDL
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(64) PRIMARY KEY,
+  email VARCHAR(255) UNIQUE,
+  name VARCHAR(255),
+  image TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id VARCHAR(64) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  description TEXT NOT NULL,
+  board VARCHAR(64) NOT NULL DEFAULT 'ESP32',
+  category VARCHAR(64) NOT NULL DEFAULT 'IoT',
+  difficulty VARCHAR(32) NOT NULL DEFAULT 'Intermediate',
+  budget_inr INTEGER,
+  is_sample BOOLEAN NOT NULL DEFAULT FALSE,
+  is_public BOOLEAN NOT NULL DEFAULT TRUE,
+  user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS project_plans (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  overview TEXT NOT NULL,
+  problem TEXT,
+  solution TEXT,
+  features JSONB DEFAULT '[]'::jsonb,
+  hardware_requirements JSONB DEFAULT '[]'::jsonb,
+  wiring_instructions JSONB DEFAULT '[]'::jsonb,
+  build_steps JSONB DEFAULT '[]'::jsonb,
+  testing_guide JSONB DEFAULT '[]'::jsonb,
+  limitations JSONB DEFAULT '[]'::jsonb,
+  safety_notes JSONB DEFAULT '[]'::jsonb,
+  estimated_cost VARCHAR(128),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS circuit_designs (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL DEFAULT 'Main Circuit',
+  version INTEGER NOT NULL DEFAULT 1,
+  components_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  connections_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS firmware_files (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  filename VARCHAR(255) NOT NULL DEFAULT 'main.ino',
+  language VARCHAR(32) NOT NULL DEFAULT 'arduino',
+  content TEXT NOT NULL,
+  extracted_pins JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS debug_sessions (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) REFERENCES projects(id) ON DELETE SET NULL,
+  user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  title VARCHAR(255) NOT NULL,
+  board_type VARCHAR(64) NOT NULL DEFAULT 'ESP32',
+  image_url TEXT,
+  image_file_name VARCHAR(255),
+  expected_behavior TEXT,
+  actual_behavior TEXT,
+  error_logs TEXT,
+  observations JSONB DEFAULT '[]'::jsonb,
+  hypotheses JSONB DEFAULT '[]'::jsonb,
+  test_results JSONB DEFAULT '[]'::jsonb,
+  status VARCHAR(32) NOT NULL DEFAULT 'IN_PROGRESS',
+  resolved_summary TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS components (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  category VARCHAR(64) NOT NULL,
+  description TEXT NOT NULL,
+  interfaces VARCHAR(128),
+  specifications JSONB DEFAULT '{}'::jsonb,
+  datasheet_url TEXT,
+  approx_price_inr NUMERIC(10, 2),
+  image_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS project_components (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  component_id VARCHAR(64) REFERENCES components(id) ON DELETE SET NULL,
+  ref VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  unit_price_inr NUMERIC(10, 2),
+  supplier_url TEXT,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS saved_projects (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, project_id)
+);

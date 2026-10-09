@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String?        @unique
+  name          String?
+  image         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  projects      Project[]
+  savedProjects SavedProject[]
+  debugSessions DebugSession[]
+}
+
+model Project {
+  id           String             @id @default(uuid())
+  title        String
+  slug         String             @unique
+  description  String
+  board        String             @default("ESP32")
+  category     String             @default("IoT")
+  difficulty   String             @default("Intermediate")
+  budgetInr    Int?
+  isSample     Boolean            @default(false)
+  isPublic     Boolean            @default(true)
+  userId       String?
+  user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  plan         ProjectPlan?
+  circuit      CircuitDesign?
+  firmwares    FirmwareFile[]
+  debugSessions DebugSession[]
+  components   ProjectComponent[]
+  savedBy      SavedProject[]
+
+  @@index([category])
+  @@index([board])
+  @@index([isSample])
+}
+
+model ProjectPlan {
+  id                 String   @id @default(uuid())
+  projectId          String   @unique
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  overview           String
+  problem            String?
+  solution           String?
+  features           Json?    // Array of feature strings
+  hardwareRequirements Json?  // Array of required hardware
+  wiringInstructions Json?    // Array of step-by-step wiring instructions
+  buildSteps         Json?    // Array of { step, goal, instructions, outcome, mistakes, safetyNotes, completed }
+  testingGuide       Json?    // Array of test procedures
+  limitations        Json?    // Array of known limitations
+  safetyNotes        Json?    // Array of safety warnings
+  estimatedCost      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model CircuitDesign {
+  id              String   @id @default(uuid())
+  projectId       String   @unique
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String   @default("Main Circuit")
+  version         Int      @default(1)
+  componentsJson  Json     // Array of { id, type, label, x, y, properties }
+  connectionsJson Json     // Array of { id, sourceComponentId, sourcePin, targetComponentId, targetPin, status, evidence }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model FirmwareFile {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  filename      String   @default("main.ino")
+  language      String   @default("arduino")
+  content       String   @db.Text
+  extractedPins Json?    // Array of { pin, operations, line }
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model DebugSession {
+  id               String   @id @default(uuid())
+  projectId        String?
+  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  title            String
+  boardType        String   @default("ESP32")
+  imageUrl         String?  @db.Text
+  imageFileName    String?
+  expectedBehavior String?  @db.Text
+  actualBehavior   String?  @db.Text
+  errorLogs        String?  @db.Text
+  observations     Json?    // Array of { description, confidence, evidence }
+  hypotheses       Json?    // Array of { id, title, explanation, confidence, evidence, recommendedTest, expectedResult, status }
+  testResults      Json?    // Array of { hypothesisId, testPerformed, result, notes, outcome, timestamp }
+  status           String   @default("IN_PROGRESS") // IN_PROGRESS, RESOLVED, INCONCLUSIVE
+  resolvedSummary  String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model Component {
+  id             String             @id @default(uuid())
+  name           String
+  slug           String             @unique
+  category       String
+  description    String
+  interfaces     String?
+  specifications Json?
+  datasheetUrl   String?
+  approxPriceInr Float?
+  imageUrl       String?
+  createdAt      DateTime           @default(now())
+  projectUsages  ProjectComponent[]
+
+  @@index([category])
+}
+
+model ProjectComponent {
+  id           String     @id @default(uuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  componentId  String?
+  component    Component? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  ref          String     // e.g. "R1", "U1", "SENS1"
+  name         String
+  quantity     Int        @default(1)
+  unitPriceInr Float?
+  supplierUrl  String?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([projectId])
+}
+
+model SavedProject {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+}
