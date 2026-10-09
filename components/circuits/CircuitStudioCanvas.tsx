@@ -47,6 +47,7 @@ import {
   Search,
   X,
   Layers,
+  ExternalLink,
 } from "lucide-react";
 
 interface CircuitStudioProps {
@@ -57,6 +58,9 @@ interface CircuitStudioProps {
   projectId?: string;
   projectName?: string;
   onSave?: (circuitData: { components: any[]; connections: any[] }) => Promise<void>;
+  diagramOnly?: boolean;
+  allowSimulation?: boolean;
+  onOpenStudio?: () => void;
 }
 
 export function CircuitStudioCanvas({
@@ -64,6 +68,9 @@ export function CircuitStudioCanvas({
   projectId,
   projectName = "Untitled Circuit",
   onSave,
+  diagramOnly = false,
+  allowSimulation = true,
+  onOpenStudio,
 }: CircuitStudioProps) {
   const nodeTypes = useMemo(() => ({ hardwareNode: HardwareNode }), []);
 
@@ -727,128 +734,184 @@ export function CircuitStudioCanvas({
 
   return (
     <div className="flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
-      {/* Studio Toolbar */}
-      <div className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-zinc-900 dark:text-zinc-100" />
-            <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-              {projectName}
+      {/* Studio Toolbar - Switch between Diagram Only minimal bar and Full Studio Toolbar */}
+      {diagramOnly ? (
+        <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100">
+              <Cpu className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="truncate max-w-[200px] sm:max-w-xs">{projectName}</span>
+            </div>
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-[10px] font-mono text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              {nodes.length} Components • {edges.length} Wires
             </span>
           </div>
-          <span className="text-zinc-300 dark:text-zinc-700">|</span>
-          <span className="font-mono text-[11px] text-zinc-500">
-            {nodes.length} Components • {edges.length} Wires
-          </span>
-          {designWarnings.length > 0 && (
-            <span
-              onClick={() => setActiveTab("warnings")}
-              className="cursor-pointer flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-            >
-              <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-              <span>{designWarnings.length} Warnings</span>
-            </span>
-          )}
-        </div>
 
-        {/* Toolbar Buttons */}
-        <div className="flex items-center gap-2">
-          {/* Simulation Toggle */}
-          {!isSimulating ? (
-            <button
-              onClick={() => {
-                setIsSimulating(true);
-                setIsTerminalOpen(true);
-              }}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-500 transition-all ring-1 ring-emerald-400/40 hover:scale-[1.02]"
-              title="Run interactive hardware simulation with real-time animations"
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-              </span>
-              <Play className="h-3.5 w-3.5 fill-current" />
-              <span>Run Simulation</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setIsSimulating(false)}
-                className="flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-amber-300/40"
-                title="Pause circuit simulation"
-              >
-                <Pause className="h-3.5 w-3.5 fill-current" />
-                <span>Pause</span>
-              </button>
+          <div className="flex items-center gap-2">
+            {allowSimulation && (
               <button
                 onClick={() => {
-                  setIsSimulating(false);
-                  setSimTick(0);
+                  setIsSimulating(!isSimulating);
+                  if (!isSimulating) setIsTerminalOpen(true);
                 }}
-                className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
-                title="Reset simulation"
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                  isSimulating
+                    ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
+                    : "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-xs"
+                }`}
+                title="Test hardware logic simulation"
               >
-                <Square className="h-3 w-3 fill-current text-zinc-500" />
-                <span>Reset</span>
+                {isSimulating ? (
+                  <>
+                    <Pause className="h-3 w-3 fill-current" />
+                    <span>Pause Sim</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3 w-3 fill-current" />
+                    <span>Test Simulation</span>
+                  </>
+                )}
               </button>
-              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                5V / 3.3V Rails Active
+            )}
+
+            {onOpenStudio && (
+              <button
+                onClick={onOpenStudio}
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 transition-colors"
+                title="Open in full Circuit Studio"
+              >
+                <ExternalLink className="h-3 w-3" />
+                <span className="hidden sm:inline">Open in Full Studio</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Full Studio Toolbar */
+        <div className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-zinc-900 dark:text-zinc-100" />
+              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                {projectName}
               </span>
             </div>
-          )}
+            <span className="text-zinc-300 dark:text-zinc-700">|</span>
+            <span className="font-mono text-[11px] text-zinc-500">
+              {nodes.length} Components • {edges.length} Wires
+            </span>
+            {designWarnings.length > 0 && (
+              <span
+                onClick={() => setActiveTab("warnings")}
+                className="cursor-pointer flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+              >
+                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                <span>{designWarnings.length} Warnings</span>
+              </span>
+            )}
+          </div>
 
-          <button
-            onClick={() => setIsTerminalOpen(!isTerminalOpen)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-              isTerminalOpen
-                ? "border-sky-500 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
-                : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-            }`}
-            title="Toggle Serial Monitor Terminal"
-          >
-            <Terminal className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-            <span className="hidden md:inline">Serial Monitor</span>
-          </button>
+          {/* Toolbar Buttons */}
+          <div className="flex items-center gap-2">
+            {/* Simulation Toggle */}
+            {!isSimulating ? (
+              <button
+                onClick={() => {
+                  setIsSimulating(true);
+                  setIsTerminalOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-500 transition-all ring-1 ring-emerald-400/40 hover:scale-[1.02]"
+                title="Run interactive hardware simulation with real-time animations"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                <Play className="h-3.5 w-3.5 fill-current" />
+                <span>Run Simulation</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setIsSimulating(false)}
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-amber-300/40"
+                  title="Pause circuit simulation"
+                >
+                  <Pause className="h-3.5 w-3.5 fill-current" />
+                  <span>Pause</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setIsSimulating(false);
+                    setSimTick(0);
+                  }}
+                  className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
+                  title="Reset simulation"
+                >
+                  <Square className="h-3 w-3 fill-current text-zinc-500" />
+                  <span>Reset</span>
+                </button>
+                <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  5V / 3.3V Rails Active
+                </span>
+              </div>
+            )}
 
-          {(selectedNode || selectedEdge) && (
             <button
-              onClick={handleDeleteSelected}
-              className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
-              title="Delete selected item"
+              onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                isTerminalOpen
+                  ? "border-sky-500 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
+                  : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              }`}
+              title="Toggle Serial Monitor Terminal"
             >
-              <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-              <span>Delete</span>
+              <Terminal className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+              <span className="hidden md:inline">Serial Monitor</span>
             </button>
-          )}
 
-          <button
-            onClick={handleExportJson}
-            className="flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
-            title="Export circuit data as JSON"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Export JSON</span>
-          </button>
+            {(selectedNode || selectedEdge) && (
+              <button
+                onClick={handleDeleteSelected}
+                className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
+                title="Delete selected item"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                <span>Delete</span>
+              </button>
+            )}
 
-          <button
-            onClick={handleSave}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-all shadow-xs ${
-              saveStatus
-                ? "bg-emerald-600 text-white ring-1 ring-emerald-400"
-                : "bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
-            }`}
-          >
-            <Save className="h-3.5 w-3.5" />
-            <span>{saveStatus || "Save Circuit"}</span>
-          </button>
+            <button
+              onClick={handleExportJson}
+              className="flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
+              title="Export circuit data as JSON"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export JSON</span>
+            </button>
+
+            <button
+              onClick={handleSave}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-all shadow-xs ${
+                saveStatus
+                  ? "bg-emerald-600 text-white ring-1 ring-emerald-400"
+                  : "bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+              }`}
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>{saveStatus || "Save Circuit"}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Studio Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Drawer / Canvas Sidebar */}
-        <div className="w-64 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 flex flex-col shrink-0">
+        {/* Left Drawer / Canvas Sidebar - Hidden in Diagram Only mode */}
+        {!diagramOnly && (
+          <div className="w-64 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 flex flex-col shrink-0">
           {/* Tabs */}
           <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs">
             <button
@@ -1161,6 +1224,7 @@ export function CircuitStudioCanvas({
             </div>
           )}
         </div>
+        )}
 
         {/* Center: The React Flow Canvas */}
         <div className="flex-1 h-full w-full relative">
@@ -1203,39 +1267,45 @@ export function CircuitStudioCanvas({
               position="top-left"
               className="!bg-white !border-zinc-200 !shadow-xs dark:!bg-zinc-900 dark:!border-zinc-800"
             />
-            <MiniMap
-              position="bottom-right"
-              className={`!bg-white !border-zinc-200 dark:!bg-zinc-900 dark:!border-zinc-800 !rounded-lg transition-all ${
-                isTerminalOpen ? "hidden md:block !bottom-76" : ""
-              }`}
-              nodeStrokeColor="#06b6d4"
-              nodeColor="#f4f4f5"
-            />
+            {!diagramOnly && (
+              <MiniMap
+                position="bottom-right"
+                className={`!bg-white !border-zinc-200 dark:!bg-zinc-900 dark:!border-zinc-800 !rounded-lg transition-all ${
+                  isTerminalOpen ? "hidden md:block !bottom-76" : ""
+                }`}
+                nodeStrokeColor="#06b6d4"
+                nodeColor="#f4f4f5"
+              />
+            )}
           </ReactFlow>
 
           {/* Interactive Simulation Controls Overlay */}
-          <VirtualSensorsPanel
-            isSimulating={isSimulating}
-            values={virtualSensors}
-            onChange={setVirtualSensors}
-            activeComponentTypes={nodes.map((n) => (n.data as any)?.type || "")}
-          />
+          {!diagramOnly && (
+            <VirtualSensorsPanel
+              isSimulating={isSimulating}
+              values={virtualSensors}
+              onChange={setVirtualSensors}
+              activeComponentTypes={nodes.map((n) => (n.data as any)?.type || "")}
+            />
+          )}
 
           {/* Embedded Monospace Serial Monitor & Waveform Plotter Drawer */}
-          <SerialMonitorDrawer
-            isOpen={isTerminalOpen}
-            onClose={() => setIsTerminalOpen(false)}
-            logs={structuredLogs}
-            onClearLogs={() => setStructuredLogs([])}
-            onSendCommand={handleSendCommand}
-            baudRate={baudRate}
-            onBaudRateChange={setBaudRate}
-            telemetryHistory={telemetryHistory}
-            isSimulating={isSimulating}
-          />
+          {!diagramOnly && (
+            <SerialMonitorDrawer
+              isOpen={isTerminalOpen}
+              onClose={() => setIsTerminalOpen(false)}
+              logs={structuredLogs}
+              onClearLogs={() => setStructuredLogs([])}
+              onSendCommand={handleSendCommand}
+              baudRate={baudRate}
+              onBaudRateChange={setBaudRate}
+              telemetryHistory={telemetryHistory}
+              isSimulating={isSimulating}
+            />
+          )}
 
-          {/* Canvas Floating Legend - automatically hides when terminal drawer is open to eliminate UI overlap */}
-          {!isTerminalOpen && (
+          {/* Canvas Floating Legend - automatically hides when terminal drawer is open or diagramOnly */}
+          {!diagramOnly && !isTerminalOpen && (
             <div className="absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-lg border border-zinc-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono shadow-xs backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 text-zinc-600 dark:text-zinc-400">
               <span className="font-semibold text-zinc-900 dark:text-zinc-100">Pin Legend:</span>
               <span className="flex items-center gap-1">

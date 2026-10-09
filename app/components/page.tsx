@@ -13,7 +13,6 @@ import {
   Tag,
   Loader2,
   ArrowRight,
-  Sparkles,
 } from "lucide-react";
 
 function getComponentArtworkType(comp: any): string {
@@ -280,7 +279,6 @@ export default function ComponentsCataloguePage() {
                       href={`/builder?prompt=${encodeURIComponent("Build a project using " + comp.name)}`}
                       className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 hover:text-violet-700 dark:text-zinc-100 dark:hover:text-violet-300 transition-colors"
                     >
-                      <Sparkles className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
                       <span>Build Project</span>
                       <ArrowRight className="h-3 w-3" />
                     </Link>
