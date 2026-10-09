@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   ReactFlow,
   Background,
@@ -125,6 +125,8 @@ export function computeAutoLayout(
 
   return positions;
 }
+
+const emptySubscribe = () => () => {};
 
 export function CircuitStudioCanvas({
   initialCircuit,
@@ -257,11 +259,11 @@ export function CircuitStudioCanvas({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings">("library");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
   const [showLegend, setShowLegend] = useState(false);
   const reactFlowInstance = useRef<any>(null);
@@ -287,64 +289,97 @@ export function CircuitStudioCanvas({
 
   // Push an immutable snapshot before any modifying action
   const pushSnapshot = useCallback(() => {
+    if (!nodesRef.current || !edgesRef.current) return;
+    const snap: CircuitSnapshot = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      edges: JSON.parse(JSON.stringify(edgesRef.current)),
+    };
     setHistory((prev) => ({
       past: [
-        ...prev.past.slice(-30),
-        {
-          nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-          edges: JSON.parse(JSON.stringify(edgesRef.current)),
-        },
+        ...(prev.past || [])
+          .filter(
+            (s): s is CircuitSnapshot =>
+              Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+          )
+          .slice(-29),
+        snap,
       ],
       future: [],
     }));
   }, []);
 
-  const canUndo = history.past.length > 0;
-  const canRedo = history.future.length > 0;
+  const canUndo = (history.past || []).some(
+    (s) => Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+  );
+  const canRedo = (history.future || []).some(
+    (s) => Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+  );
 
   const handleUndo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.past.length === 0) return prev;
-      const previous = prev.past[prev.past.length - 1];
-      const newPast = prev.past.slice(0, prev.past.length - 1);
-      const currentSnapshot = {
-        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-        edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      };
+    const validPast = (history.past || []).filter(
+      (s): s is CircuitSnapshot =>
+        Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+    );
+    if (validPast.length === 0) return;
 
-      setNodes(previous.nodes);
-      setEdges(previous.edges);
-      setSelectedNode(null);
-      setSelectedEdge(null);
+    const previous = validPast[validPast.length - 1];
+    if (!previous || !previous.nodes || !previous.edges) return;
 
-      return {
-        past: newPast,
-        future: [currentSnapshot, ...prev.future],
-      };
+    const newPast = validPast.slice(0, validPast.length - 1);
+    const currentSnapshot: CircuitSnapshot = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current || [])),
+      edges: JSON.parse(JSON.stringify(edgesRef.current || [])),
+    };
+
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+
+    setHistory({
+      past: newPast,
+      future: [
+        currentSnapshot,
+        ...(history.future || []).filter(
+          (s): s is CircuitSnapshot =>
+            Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+        ),
+      ],
     });
-  }, [setNodes, setEdges]);
+  }, [history, setNodes, setEdges]);
 
   const handleRedo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.future.length === 0) return prev;
-      const next = prev.future[0];
-      const newFuture = prev.future.slice(1);
-      const currentSnapshot = {
-        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-        edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      };
+    const validFuture = (history.future || []).filter(
+      (s): s is CircuitSnapshot =>
+        Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+    );
+    if (validFuture.length === 0) return;
 
-      setNodes(next.nodes);
-      setEdges(next.edges);
-      setSelectedNode(null);
-      setSelectedEdge(null);
+    const next = validFuture[0];
+    if (!next || !next.nodes || !next.edges) return;
 
-      return {
-        past: [...prev.past, currentSnapshot],
-        future: newFuture,
-      };
+    const newFuture = validFuture.slice(1);
+    const currentSnapshot: CircuitSnapshot = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current || [])),
+      edges: JSON.parse(JSON.stringify(edgesRef.current || [])),
+    };
+
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+
+    setHistory({
+      past: [
+        ...(history.past || []).filter(
+          (s): s is CircuitSnapshot =>
+            Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+        ),
+        currentSnapshot,
+      ],
+      future: newFuture,
     });
-  }, [setNodes, setEdges]);
+  }, [history, setNodes, setEdges]);
 
   // Global Keyboard shortcuts: Ctrl+Z / Cmd+Z for Undo, Ctrl+Y / Cmd+Shift+Z for Redo
   useEffect(() => {
@@ -432,6 +467,7 @@ export function CircuitStudioCanvas({
 
   // Drag handlers to capture component movement in history
   const handleNodeDragStart = useCallback(() => {
+    if (!nodesRef.current || !edgesRef.current) return;
     dragStartSnapshotRef.current = {
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
@@ -439,23 +475,33 @@ export function CircuitStudioCanvas({
   }, []);
 
   const handleNodeDragStop = useCallback(() => {
-    if (dragStartSnapshotRef.current) {
-      const prevNodes = dragStartSnapshotRef.current.nodes;
-      const changed = nodesRef.current.some((node) => {
-        const prev = prevNodes.find((p) => p.id === node.id);
-        return (
-          prev &&
-          (prev.position.x !== node.position.x ||
-            prev.position.y !== node.position.y)
-        );
-      });
-      if (changed) {
-        setHistory((prev) => ({
-          past: [...prev.past.slice(-29), dragStartSnapshotRef.current!],
-          future: [],
-        }));
-      }
-      dragStartSnapshotRef.current = null;
+    const startSnapshot = dragStartSnapshotRef.current;
+    dragStartSnapshotRef.current = null;
+    if (!startSnapshot || !startSnapshot.nodes) return;
+
+    const prevNodes = startSnapshot.nodes;
+    const changed = (nodesRef.current || []).some((node) => {
+      const prev = prevNodes.find((p) => p.id === node.id);
+      return (
+        prev &&
+        (prev.position.x !== node.position.x ||
+          prev.position.y !== node.position.y)
+      );
+    });
+
+    if (changed) {
+      setHistory((prev) => ({
+        past: [
+          ...(prev.past || [])
+            .filter(
+              (s): s is CircuitSnapshot =>
+                Boolean(s && Array.isArray(s.nodes) && Array.isArray(s.edges))
+            )
+            .slice(-29),
+          startSnapshot,
+        ],
+        future: [],
+      }));
     }
   }, []);
 

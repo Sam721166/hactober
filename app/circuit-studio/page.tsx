@@ -11,23 +11,23 @@ export default function CircuitStudioPage() {
   const [projectName, setProjectName] = useState("Circuit Studio Sandbox");
 
   useEffect(() => {
-    // Check if there is a pending circuit stashed from Project Builder
-    try {
-      const stashed = sessionStorage.getItem("circuitdoctor_temp_circuit");
-      if (stashed) {
-        const parsed = JSON.parse(stashed);
-        if (parsed?.circuit) {
-          setSelectedCircuit(parsed.circuit);
-          setProjectName(parsed.title || "Project Builder Generated Circuit");
-          sessionStorage.removeItem("circuitdoctor_temp_circuit");
-          return;
+    async function initCircuitStudio() {
+      // Check if there is a pending circuit stashed from Project Builder
+      try {
+        const stashed = sessionStorage.getItem("circuitdoctor_temp_circuit");
+        if (stashed) {
+          const parsed = JSON.parse(stashed);
+          if (parsed?.circuit) {
+            setSelectedCircuit(parsed.circuit);
+            setProjectName(parsed.title || "Project Builder Generated Circuit");
+            sessionStorage.removeItem("circuitdoctor_temp_circuit");
+            return;
+          }
         }
+      } catch (e) {
+        console.warn("Failed to read sessionStorage circuit:", e);
       }
-    } catch (e) {
-      console.warn("Failed to read sessionStorage circuit:", e);
-    }
 
-    async function loadProjects() {
       try {
         const res = await fetch("/api/projects");
         const data = await res.json();
@@ -43,7 +43,8 @@ export default function CircuitStudioPage() {
         console.error("Failed to load projects:", err);
       }
     }
-    loadProjects();
+
+    void initCircuitStudio();
   }, []);
 
   const handleSelectProject = async (id: string) => {
