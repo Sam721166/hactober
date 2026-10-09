@@ -34,6 +34,14 @@ import {
   Info,
   Maximize2,
   ArrowRight,
+  Play,
+  Pause,
+  Square,
+  Terminal,
+  Sliders,
+  Activity,
+  Sparkles,
+  Radio,
 } from "lucide-react";
 
 interface CircuitStudioProps {
@@ -148,6 +156,101 @@ export function CircuitStudioCanvas({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings">("library");
+
+  // Simulation Engine State
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simTick, setSimTick] = useState(0);
+  const [simSensorValue, setSimSensorValue] = useState(65);
+  const [isButtonPressed, setIsButtonPressed] = useState(false);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [serialLogs, setSerialLogs] = useState<string[]>([
+    "[SYSTEM] Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
+  ]);
+
+  // Derived simulation states based on sensor and clock ticks
+  const simLedOn = isSimulating && (simSensorValue > 50 || isButtonPressed || simTick % 2 === 0);
+  const simServoAngle = isSimulating ? [30, 90, 150, 90][simTick % 4] : 0;
+  const simBuzzerActive = isSimulating && (simSensorValue > 80 || isButtonPressed);
+  const simRelayActive = isSimulating && (simSensorValue > 60);
+  const simOledMsg = isSimulating
+    ? `SOIL: ${simSensorValue}% | LED: ${simLedOn ? "ON" : "OFF"}`
+    : "128x64 SSD1306";
+
+  // Simulation Clock Tick Loop
+  useEffect(() => {
+    if (!isSimulating) return;
+
+    const timer = setInterval(() => {
+      setSimTick((t) => {
+        const nextTick = t + 1;
+        const timestamp = (nextTick * 0.8).toFixed(1);
+        const logEntries: string[] = [];
+
+        if (nextTick === 1) {
+          logEntries.push(`[${timestamp}s] [BOOT] Microcontroller initialized at 115200 baud`);
+          logEntries.push(`[${timestamp}s] [POWER] 3.3V and 5.0V voltage rails nominal`);
+        }
+        if (nextTick % 2 === 0) {
+          logEntries.push(
+            `[${timestamp}s] [SENSOR] ADC Read: ${Math.round(simSensorValue * 40.95)} (Scaled: ${simSensorValue}%)`
+          );
+        }
+        if (nextTick % 4 === 0) {
+          logEntries.push(
+            `[${timestamp}s] [ACTUATOR] GPIO Status: LED=${simLedOn ? "HIGH" : "LOW"}, Relay=${simRelayActive ? "CLOSED" : "OPEN"}`
+          );
+        }
+        if (simBuzzerActive && nextTick % 3 === 0) {
+          logEntries.push(`[${timestamp}s] [WARN] High threshold trigger -> Buzzer active!`);
+        }
+
+        if (logEntries.length > 0) {
+          setSerialLogs((prev) => [...prev.slice(-40), ...logEntries]);
+        }
+        return nextTick;
+      });
+    }, 800);
+
+    return () => clearInterval(timer);
+  }, [isSimulating, simSensorValue, isButtonPressed, simLedOn, simRelayActive, simBuzzerActive]);
+
+  // Propagate simulation state to nodes
+  useEffect(() => {
+    setNodes((currentNodes) =>
+      currentNodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          isSimulating,
+          simState: {
+            isLedOn: simLedOn,
+            servoAngle: simServoAngle,
+            oledMessage: simOledMsg,
+            buzzerActive: simBuzzerActive,
+            relayActive: simRelayActive,
+            motorRunning: isSimulating,
+            sensorReading: simSensorValue,
+            tick: simTick,
+          },
+        },
+      }))
+    );
+  }, [isSimulating, simTick, simLedOn, simServoAngle, simOledMsg, simBuzzerActive, simRelayActive, simSensorValue, setNodes]);
+
+  // Animate wires when simulating
+  useEffect(() => {
+    setEdges((currentEdges) =>
+      currentEdges.map((e) => ({
+        ...e,
+        animated: isSimulating ? true : e.animated,
+        style: {
+          ...e.style,
+          strokeWidth: isSimulating ? 3 : 2.5,
+          filter: isSimulating ? "drop-shadow(0 0 5px rgba(6,182,212,0.6))" : undefined,
+        },
+      }))
+    );
+  }, [isSimulating, setEdges]);
 
   // On connect
   const onConnect = useCallback(
@@ -357,6 +460,60 @@ export function CircuitStudioCanvas({
 
         {/* Toolbar Buttons */}
         <div className="flex items-center gap-2">
+          {/* Simulation Toggle */}
+          {!isSimulating ? (
+            <button
+              onClick={() => {
+                setIsSimulating(true);
+                setIsTerminalOpen(true);
+              }}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 transition-all ring-1 ring-emerald-500/50"
+              title="Run interactive hardware simulation with real-time animations"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Run Simulation</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsSimulating(false)}
+                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 transition-colors"
+                title="Pause circuit simulation"
+              >
+                <Pause className="h-3.5 w-3.5 fill-current" />
+                <span>Pause</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsSimulating(false);
+                  setSimTick(0);
+                }}
+                className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                title="Reset simulation"
+              >
+                <Square className="h-3 w-3 fill-current text-zinc-500" />
+                <span>Reset</span>
+              </button>
+              <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/60 animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                5V / 3.3V Rails Active
+              </span>
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              isTerminalOpen
+                ? "border-cyan-500 bg-cyan-50 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800 font-semibold"
+                : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+            title="Toggle Serial Monitor Terminal"
+          >
+            <Terminal className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Serial Monitor</span>
+          </button>
+
           {(selectedNode || selectedEdge) && (
             <button
               onClick={handleDeleteSelected}
@@ -691,6 +848,95 @@ export function CircuitStudioCanvas({
               nodeColor="#f4f4f5"
             />
           </ReactFlow>
+
+          {/* Interactive Simulation Controls Overlay */}
+          {isSimulating && (
+            <div className="absolute top-4 right-4 z-20 w-72 rounded-xl border border-zinc-200/90 bg-white/95 p-3.5 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95 font-sans">
+              <div className="flex items-center justify-between border-b border-zinc-200/80 pb-2 dark:border-zinc-800">
+                <div className="flex items-center gap-1.5">
+                  <Sliders className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                    Virtual Sensors & Inputs
+                  </span>
+                </div>
+                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
+                  LIVE
+                </span>
+              </div>
+
+              {/* Sensor Slider */}
+              <div className="mt-3 space-y-1.5">
+                <div className="flex justify-between text-[11px] font-mono">
+                  <span className="text-zinc-500">Sensor Input (Moisture/Temp):</span>
+                  <span className="font-bold text-emerald-600">{simSensorValue}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={simSensorValue}
+                  onChange={(e) => setSimSensorValue(parseInt(e.target.value, 10))}
+                  className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer dark:bg-zinc-700 accent-emerald-600"
+                />
+                <div className="flex justify-between text-[9px] font-mono text-zinc-400 pt-0.5">
+                  <button onClick={() => setSimSensorValue(15)} className="hover:text-cyan-600">Dry (15%)</button>
+                  <button onClick={() => setSimSensorValue(55)} className="hover:text-cyan-600">Optimal (55%)</button>
+                  <button onClick={() => setSimSensorValue(85)} className="hover:text-rose-600 font-bold">Alarm (85%)</button>
+                </div>
+              </div>
+
+              {/* Virtual Momentary Push Button */}
+              <div className="mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono text-zinc-500">Virtual Tactile Switch:</span>
+                <button
+                  onMouseDown={() => setIsButtonPressed(true)}
+                  onMouseUp={() => setIsButtonPressed(false)}
+                  onTouchStart={() => setIsButtonPressed(true)}
+                  onTouchEnd={() => setIsButtonPressed(false)}
+                  className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all shadow-xs ${
+                    isButtonPressed
+                      ? "bg-cyan-600 text-white scale-95 shadow-inner"
+                      : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200"
+                  }`}
+                >
+                  {isButtonPressed ? "PRESSED (HIGH)" : "HOLD TO PRESS"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Embedded Monospace Serial Monitor Terminal Drawer */}
+          {isTerminalOpen && (
+            <div className="absolute bottom-14 left-4 right-4 z-20 rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col font-mono text-xs max-h-48">
+              <div className="flex items-center justify-between bg-zinc-900/90 px-3 py-1.5 border-b border-zinc-800">
+                <div className="flex items-center gap-2 text-zinc-300">
+                  <Terminal className="h-3.5 w-3.5 text-cyan-400" />
+                  <span className="font-bold text-[11px]">Serial Monitor • 115200 Baud (COM3 / /dev/ttyUSB0)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSerialLogs([])}
+                    className="text-[10px] text-zinc-400 hover:text-zinc-200"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={() => setIsTerminalOpen(false)}
+                    className="text-[11px] text-zinc-400 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1 text-[11px] text-emerald-400 selection:bg-emerald-900 selection:text-white">
+                {serialLogs.map((log, idx) => (
+                  <div key={idx} className="leading-tight">
+                    {log}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Canvas Floating Legend */}
           <div className="absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-lg border border-zinc-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 text-zinc-600 dark:text-zinc-400">

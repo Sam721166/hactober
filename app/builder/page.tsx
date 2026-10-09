@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
+import { CircuitStudioCanvas } from "@/components/circuits/CircuitStudioCanvas";
 import {
   Sparkles,
   Cpu,
@@ -19,6 +20,8 @@ import {
   Code2,
   Copy,
   Check,
+  Play,
+  ExternalLink,
 } from "lucide-react";
 
 function ProjectBuilderContent() {
@@ -34,7 +37,7 @@ function ProjectBuilderContent() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "circuit" | "wiring" | "firmware" | "steps">("overview");
+  const [activeTab, setActiveTab] = useState<"circuit" | "overview" | "wiring" | "firmware" | "steps">("circuit");
   const [isSaving, setIsSaving] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -111,6 +114,20 @@ function ProjectBuilderContent() {
 
   // Open in Circuit Studio
   const handleOpenInStudio = () => {
+    if (generatedPlan?.circuit) {
+      try {
+        sessionStorage.setItem(
+          "circuitdoctor_temp_circuit",
+          JSON.stringify({
+            title: generatedPlan.title,
+            circuit: generatedPlan.circuit,
+          })
+        );
+      } catch (e) {
+        console.warn("Could not cache circuit to sessionStorage:", e);
+      }
+    }
+
     if (savedProjectId) {
       router.push(`/projects/${savedProjectId}`);
     } else {
@@ -306,6 +323,17 @@ function ProjectBuilderContent() {
                 {/* Sub Navigation Tabs */}
                 <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs overflow-x-auto">
                   <button
+                    onClick={() => setActiveTab("circuit")}
+                    className={`py-2 px-3 font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                      activeTab === "circuit"
+                        ? "border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400"
+                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                    }`}
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    <span>Circuit Diagram & Simulation</span>
+                  </button>
+                  <button
                     onClick={() => setActiveTab("overview")}
                     className={`py-2 px-3 font-semibold border-b-2 whitespace-nowrap transition-colors ${
                       activeTab === "overview"
@@ -346,6 +374,64 @@ function ProjectBuilderContent() {
                     Build Steps ({generatedPlan.buildSteps?.length || 0})
                   </button>
                 </div>
+
+                {/* Tab: Circuit Diagram & Live Simulation */}
+                {activeTab === "circuit" && (
+                  <div className="space-y-4">
+                    {/* Header Action Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-cyan-50/70 p-3 border border-cyan-200/80 dark:bg-cyan-950/20 dark:border-cyan-900/60 text-xs">
+                      <div className="flex items-center gap-2 text-cyan-900 dark:text-cyan-200 font-medium">
+                        <Activity className="h-4 w-4 text-cyan-600" />
+                        <span>Interactive Visual Circuit Diagram & Hardware Simulation</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleOpenInStudio}
+                          className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-cyan-500 transition-colors"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          <span>Open in Full Circuit Studio</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Embedded Circuit Canvas */}
+                    <div className="h-[460px] w-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative bg-zinc-50 dark:bg-zinc-950">
+                      <CircuitStudioCanvas
+                        initialCircuit={generatedPlan.circuit}
+                        projectName={generatedPlan.title}
+                      />
+                    </div>
+
+                    {/* How to Run Project Guidance Card */}
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 space-y-3">
+                      <div className="flex items-center gap-2 font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                        <Play className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>How to Run & Test Your Project in Circuit Studio:</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                          <span className="font-bold text-cyan-600 dark:text-cyan-400 font-mono">1. Connect Pins</span>
+                          <p className="mt-1 text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
+                            Follow the colored jumper wires in the diagram above or check the Pin-to-Pin wiring table. Drag from pin handles to add custom connections.
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">2. Run Simulation</span>
+                          <p className="mt-1 text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
+                            Click <strong>Run Simulation</strong> in the canvas toolbar. Observe the <strong>LED glow brightly</strong>, the <strong>servo motor rotate</strong>, and the <strong>OLED display stream telemetry</strong>!
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                          <span className="font-bold text-purple-600 dark:text-purple-400 font-mono">3. Flash Firmware</span>
+                          <p className="mt-1 text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
+                            Open the <strong>Starter Firmware</strong> tab to copy compiled C++ / Arduino code. Flash it via USB with Arduino IDE or ESP-IDF.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Tab: Overview & BOM */}
                 {activeTab === "overview" && (

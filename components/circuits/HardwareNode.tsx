@@ -35,10 +35,68 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
   const topPins = pins.filter((p) => p.side === "top");
   const bottomPins = pins.filter((p) => p.side === "bottom");
 
+  const isSimulating = Boolean(data.isSimulating);
+  const simState = data.simState;
+
+  const getSimBadge = () => {
+    if (!isSimulating) return null;
+    switch (data.type) {
+      case "led":
+        return (
+          <span className="rounded-full bg-rose-100 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-800 px-1.5 py-0.2 text-[8px] font-bold text-rose-700 dark:text-rose-400 animate-pulse">
+            ✨ Glowing HIGH
+          </span>
+        );
+      case "servo_motor":
+        return (
+          <span className="rounded-full bg-cyan-100 dark:bg-cyan-950/70 border border-cyan-300 dark:border-cyan-800 px-1.5 py-0.2 text-[8px] font-bold text-cyan-700 dark:text-cyan-400">
+            🔄 {simState?.servoAngle ?? 45}° Angle
+          </span>
+        );
+      case "oled_display":
+        return (
+          <span className="rounded-full bg-purple-100 dark:bg-purple-950/70 border border-purple-300 dark:border-purple-800 px-1.5 py-0.2 text-[8px] font-bold text-purple-700 dark:text-purple-400">
+            📺 Live Display
+          </span>
+        );
+      case "buzzer":
+        return (
+          <span className="rounded-full bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800 px-1.5 py-0.2 text-[8px] font-bold text-amber-700 dark:text-amber-400 animate-bounce">
+            🔔 Tone Active
+          </span>
+        );
+      case "relay_module":
+        return (
+          <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 text-[8px] font-bold text-emerald-700 dark:text-emerald-400">
+            🔌 COM-NO Contact
+          </span>
+        );
+      case "esp32":
+      case "arduino_uno":
+      case "arduino_nano":
+      case "pico":
+        return (
+          <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 text-[8px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+            <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" /> MCU Running
+          </span>
+        );
+      default:
+        return (
+          <span className="rounded-full bg-cyan-100 dark:bg-cyan-950/70 border border-cyan-300 dark:border-cyan-800 px-1.5 py-0.2 text-[8px] font-bold text-cyan-700 dark:text-cyan-400">
+            ⚡ Energized
+          </span>
+        );
+    }
+  };
+
   return (
     <div
-      className={`min-w-[190px] rounded-xl border bg-white p-3 shadow-md transition-all dark:bg-zinc-900 ${
-        selected
+      className={`min-w-[195px] rounded-xl border bg-white p-3 shadow-md transition-all dark:bg-zinc-900 ${
+        isSimulating && data.type === "led" && (simState?.isLedOn ?? true)
+          ? "border-rose-500 ring-4 ring-rose-500/20 shadow-[0_0_25px_rgba(239,68,68,0.35)]"
+          : isSimulating
+          ? "border-emerald-500/80 ring-2 ring-emerald-500/20 shadow-emerald-500/5"
+          : selected
           ? "border-cyan-500 ring-2 ring-cyan-500/20 shadow-cyan-500/10"
           : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600"
       }`}
@@ -58,18 +116,23 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
         </div>
       ))}
 
-      {/* Header with Small Component Image Diagram */}
+      {/* Header with Small Component Image Diagram & Simulation Badge */}
       <div className="flex items-center gap-2.5 border-b border-zinc-100 pb-2.5 dark:border-zinc-800">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-50 p-1 border border-zinc-200 shadow-sm dark:bg-zinc-800 dark:border-zinc-700">
-          <ComponentArtwork type={data.type} size="sm" />
+          <ComponentArtwork type={data.type} size="sm" isSimulating={isSimulating} simState={simState} />
         </div>
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100 leading-tight truncate" title={data.label}>
-            {data.label}
-          </span>
-          <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-400 truncate">
-            {data.type?.replace(/_/g, " ")}
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100 leading-tight truncate" title={data.label}>
+              {data.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-400 truncate">
+              {data.type?.replace(/_/g, " ")}
+            </span>
+            {getSimBadge()}
+          </div>
         </div>
       </div>
 
