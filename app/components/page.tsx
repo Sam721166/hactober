@@ -41,8 +41,20 @@ function getComponentArtworkType(comp: any): string {
   if (slug.includes("resistor") || name.includes("resistor")) return "resistor";
   if (slug.includes("ldr") || name.includes("photoresistor") || name.includes("light"))
     return "ldr_sensor";
-  if (slug.includes("button") || name.includes("button") || name.includes("switch"))
-    return "push_button";
+  if (slug.includes("pir") || name.includes("pir") || name.includes("motion")) return "pir_sensor";
+  if (slug.includes("mpu") || slug.includes("gyro") || name.includes("imu") || name.includes("accelerometer")) return "mpu6050";
+  if (slug.includes("gas") || slug.includes("mq2") || slug.includes("smoke")) return "mq2_gas_sensor";
+  if (slug.includes("bmp") || slug.includes("pressure") || slug.includes("barometer")) return "bmp280";
+  if (slug.includes("ir-") || slug.includes("obstacle") || name.includes("obstacle") || name.includes("infrared")) return "ir_sensor";
+  if (slug.includes("potentiometer") || slug.includes("pot") || name.includes("potentiometer")) return "potentiometer";
+  if (slug.includes("lcd") || slug.includes("1602") || name.includes("lcd")) return "lcd1602";
+  if (slug.includes("seven") || slug.includes("tm1637") || slug.includes("segment")) return "seven_segment";
+  if (slug.includes("rgb") || name.includes("rgb")) return "rgb_led";
+  if (slug.includes("stepper") || name.includes("stepper") || name.includes("28byj")) return "stepper_motor";
+  if (slug.includes("dc-motor") || name.includes("dc motor") || (slug.includes("motor") && !slug.includes("servo") && !slug.includes("driver"))) return "dc_motor";
+  if (slug.includes("solenoid") || name.includes("solenoid") || name.includes("lock")) return "solenoid";
+  if (slug.includes("battery") || slug.includes("9v") || name.includes("battery")) return "battery_9v";
+  if (slug.includes("bluetooth") || slug.includes("hc-05") || slug.includes("hc05") || name.includes("bluetooth")) return "bluetooth_hc05";
   if (slug.includes("buzzer") || name.includes("buzzer")) return "buzzer";
 
   return "esp32";

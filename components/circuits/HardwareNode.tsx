@@ -80,6 +80,94 @@ export const HardwareNode = memo(({ id, data, selected }: { id: string; data: an
             <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" /> MCU Running
           </span>
         );
+      case "pir_sensor":
+        return (
+          <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 text-[8px] font-bold text-emerald-700 dark:text-emerald-400">
+            {((simState?.tick ?? 0) % 3 === 0) ? "🏃 Motion Detected" : "🟢 Scanning Area"}
+          </span>
+        );
+      case "mpu6050":
+        return (
+          <span className="rounded-full bg-sky-100 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-800 px-1.5 py-0.2 text-[8px] font-bold text-sky-700 dark:text-sky-400">
+            📐 6-DoF Gyro Live
+          </span>
+        );
+      case "mq2_gas_sensor":
+        return (
+          <span className={`rounded-full px-1.5 py-0.2 text-[8px] font-bold border ${
+            (simState?.sensorReading ?? 0) > 60
+              ? "bg-rose-100 border-rose-300 text-rose-700 dark:bg-rose-950/70 dark:border-rose-800 dark:text-rose-400 animate-pulse"
+              : "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-950/70 dark:border-emerald-800 dark:text-emerald-400"
+          }`}>
+            {(simState?.sensorReading ?? 0) > 60 ? "⚠️ Gas Alert" : "🟢 Air Normal"}
+          </span>
+        );
+      case "bmp280":
+        return (
+          <span className="rounded-full bg-purple-100 dark:bg-purple-950/70 border border-purple-300 dark:border-purple-800 px-1.5 py-0.2 text-[8px] font-bold text-purple-700 dark:text-purple-400">
+            🌡️ 1013 hPa
+          </span>
+        );
+      case "ir_sensor":
+        return (
+          <span className="rounded-full bg-indigo-100 dark:bg-indigo-950/70 border border-indigo-300 dark:border-indigo-800 px-1.5 py-0.2 text-[8px] font-bold text-indigo-700 dark:text-indigo-400">
+            {(simState?.sensorReading ?? 0) > 40 ? "🚧 Obstacle Detected" : "🟢 Clear"}
+          </span>
+        );
+      case "potentiometer":
+        return (
+          <span className="rounded-full bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800 px-1.5 py-0.2 text-[8px] font-bold text-amber-700 dark:text-amber-400">
+            🎛️ {simState?.sensorReading ?? 50}% Wiper
+          </span>
+        );
+      case "lcd1602":
+        return (
+          <span className="rounded-full bg-cyan-100 dark:bg-cyan-950/70 border border-cyan-300 dark:border-cyan-800 px-1.5 py-0.2 text-[8px] font-bold text-cyan-700 dark:text-cyan-400">
+            📟 16x2 I2C Active
+          </span>
+        );
+      case "seven_segment":
+        return (
+          <span className="rounded-full bg-rose-100 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-800 px-1.5 py-0.2 text-[8px] font-bold text-rose-700 dark:text-rose-400">
+            ⏱️ Timer Clock
+          </span>
+        );
+      case "rgb_led":
+        return (
+          <span className="rounded-full bg-fuchsia-100 dark:bg-fuchsia-950/70 border border-fuchsia-300 dark:border-fuchsia-800 px-1.5 py-0.2 text-[8px] font-bold text-fuchsia-700 dark:text-fuchsia-400 animate-pulse">
+            🌈 RGB Glow
+          </span>
+        );
+      case "dc_motor":
+        return (
+          <span className="rounded-full bg-teal-100 dark:bg-teal-950/70 border border-teal-300 dark:border-teal-800 px-1.5 py-0.2 text-[8px] font-bold text-teal-700 dark:text-teal-400">
+            ⚡ Spinning Shaft
+          </span>
+        );
+      case "stepper_motor":
+        return (
+          <span className="rounded-full bg-blue-100 dark:bg-blue-950/70 border border-blue-300 dark:border-blue-800 px-1.5 py-0.2 text-[8px] font-bold text-blue-700 dark:text-blue-400">
+            ⚙️ 4-Phase Stepping
+          </span>
+        );
+      case "solenoid":
+        return (
+          <span className="rounded-full bg-orange-100 dark:bg-orange-950/70 border border-orange-300 dark:border-orange-800 px-1.5 py-0.2 text-[8px] font-bold text-orange-700 dark:text-orange-400">
+            {((simState?.tick ?? 0) % 2 === 0) ? "🧲 Actuated" : "⚪ Release"}
+          </span>
+        );
+      case "battery_9v":
+        return (
+          <span className="rounded-full bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800 px-1.5 py-0.2 text-[8px] font-bold text-amber-700 dark:text-amber-400">
+            🔋 9V Supply
+          </span>
+        );
+      case "bluetooth_hc05":
+        return (
+          <span className="rounded-full bg-blue-100 dark:bg-blue-950/70 border border-blue-300 dark:border-blue-800 px-1.5 py-0.2 text-[8px] font-bold text-blue-700 dark:text-blue-400">
+            📶 BT Serial Active
+          </span>
+        );
       default:
         return (
           <span className="rounded-full bg-cyan-100 dark:bg-cyan-950/70 border border-cyan-300 dark:border-cyan-800 px-1.5 py-0.2 text-[8px] font-bold text-cyan-700 dark:text-cyan-400">

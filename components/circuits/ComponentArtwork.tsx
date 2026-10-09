@@ -446,6 +446,399 @@ export function ComponentArtwork({
         );
       }
 
+      case "pir_sensor": {
+        const isTriggered = isSimulating && ((simState?.tick ?? 0) % 3 === 0);
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="15" y="16" width="70" height="68" rx="4" fill="#15803d" stroke="#166534" strokeWidth="2" />
+            <circle cx="22" cy="23" r="2" fill="#f8fafc" />
+            <circle cx="78" cy="23" r="2" fill="#f8fafc" />
+            {/* Trimpots */}
+            <rect x="22" y="66" width="10" height="10" rx="1.5" fill="#ea580c" stroke="#c2410c" strokeWidth="1" />
+            <line x1="24" y1="71" x2="30" y2="71" stroke="#f8fafc" strokeWidth="1" />
+            <rect x="68" y="66" width="10" height="10" rx="1.5" fill="#ea580c" stroke="#c2410c" strokeWidth="1" />
+            <line x1="70" y1="71" x2="76" y2="71" stroke="#f8fafc" strokeWidth="1" />
+            {/* White Fresnel Dome Lens */}
+            <circle cx="50" cy="42" r="22" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="2" />
+            {/* Faceted Mesh Grid */}
+            <path d="M35 32 L65 32 M30 42 L70 42 M35 52 L65 52" stroke="#cbd5e1" strokeWidth="0.8" />
+            <path d="M42 22 L42 62 M50 20 L50 64 M58 22 L58 62" stroke="#cbd5e1" strokeWidth="0.8" />
+            {/* Status Indicator */}
+            <circle cx="50" cy="74" r="2.5" fill={isTriggered ? "#22c55e" : "#14532d"} />
+            {isTriggered && (
+              <>
+                <circle cx="50" cy="74" r="5" fill="#22c55e" opacity="0.5" />
+                <circle cx="50" cy="42" r="26" stroke="#22c55e" strokeWidth="1.5" opacity="0.6" />
+              </>
+            )}
+            <text x="50" y="81" fill="#f8fafc" fontSize="4.5" fontFamily="monospace" textAnchor="middle">HC-SR501</text>
+          </svg>
+        );
+      }
+
+      case "mpu6050": {
+        const tilt = isSimulating ? [ -12, 0, 12, 0 ][(simState?.tick ?? 0) % 4] : 0;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="18" y="14" width="64" height="72" rx="4" fill="#1e3a8a" stroke="#1e40af" strokeWidth="2" />
+            {/* Pin header contacts */}
+            {[20, 28, 36, 44, 52, 60, 68, 76].map((x) => (
+              <circle key={x} cx={x} cy="20" r="1.8" fill="#f59e0b" stroke="#b45309" strokeWidth="0.5" />
+            ))}
+            {/* MPU-6050 IC */}
+            <rect x="34" y="36" width="32" height="32" rx="2" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+            <text x="50" y="52" fill="#e4e4e7" fontSize="5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">MPU</text>
+            <text x="50" y="60" fill="#a1a1aa" fontSize="4" fontFamily="monospace" textAnchor="middle">6050</text>
+            <circle cx="38" cy="40" r="1" fill="#71717a" />
+            {/* Power LED */}
+            <circle cx="26" cy="74" r="1.5" fill={isSimulating ? "#ef4444" : "#7f1d1d"} />
+            {/* Gyro dynamic axis cross */}
+            <g style={{ transformOrigin: "50px 50px", transform: `rotate(${tilt}deg)`, transition: "transform 0.4s ease" }}>
+              <line x1="72" y1="46" x2="80" y2="46" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="72" y1="46" x2="72" y2="38" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" />
+            </g>
+            <text x="50" y="78" fill="#93c5fd" fontSize="4" fontFamily="sans-serif" textAnchor="middle">6-AXIS IMU</text>
+          </svg>
+        );
+      }
+
+      case "mq2_gas_sensor": {
+        const gasAlarm = isSimulating && (simState?.sensorReading ?? 0) > 60;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="18" y="14" width="64" height="72" rx="4" fill="#0369a1" stroke="#0284c7" strokeWidth="2" />
+            {/* Round Steel Mesh Sensor Dome */}
+            <circle cx="50" cy="44" r="22" fill="#d4d4d8" stroke="#71717a" strokeWidth="2" />
+            <circle cx="50" cy="44" r="17" fill="#a1a1aa" />
+            <circle cx="50" cy="44" r="12" fill="#71717a" />
+            {/* Concentric / cross mesh pattern */}
+            <line x1="33" y1="44" x2="67" y2="44" stroke="#52525b" strokeWidth="0.8" />
+            <line x1="50" y1="27" x2="50" y2="61" stroke="#52525b" strokeWidth="0.8" />
+            <line x1="38" y1="32" x2="62" y2="56" stroke="#52525b" strokeWidth="0.8" />
+            <line x1="38" y1="56" x2="62" y2="32" stroke="#52525b" strokeWidth="0.8" />
+            {/* Comparator IC */}
+            <rect x="24" y="68" width="16" height="10" rx="1" fill="#18181b" stroke="#3f3f46" strokeWidth="0.8" />
+            {/* Power & DOUT LEDs */}
+            <circle cx="48" cy="73" r="1.8" fill={isSimulating ? "#22c55e" : "#14532d"} />
+            <circle cx="56" cy="73" r="1.8" fill={gasAlarm ? "#ef4444" : "#7f1d1d"} />
+            {gasAlarm && (
+              <>
+                <circle cx="56" cy="73" r="4" fill="#ef4444" opacity="0.6" className="animate-ping" />
+                <circle cx="50" cy="44" r="25" stroke="#ef4444" strokeWidth="1.5" opacity="0.7" />
+              </>
+            )}
+            <text x="70" y="74" fill="#ffffff" fontSize="4.5" fontWeight="bold" fontFamily="monospace">MQ-2</text>
+          </svg>
+        );
+      }
+
+      case "bmp280": {
+        const isBlinking = isSimulating && ((simState?.tick ?? 0) % 2 === 0);
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="22" y="16" width="56" height="68" rx="4" fill="#6b21a8" stroke="#7e22ce" strokeWidth="2" />
+            {/* Pin Contacts */}
+            {[26, 36, 46, 56, 66].map((x) => (
+              <circle key={x} cx={x} cy="22" r="2" fill="#f59e0b" stroke="#d97706" strokeWidth="0.5" />
+            ))}
+            {/* Metal Pressure Can */}
+            <rect x="36" y="38" width="28" height="24" rx="2" fill="#e4e4e7" stroke="#a1a1aa" strokeWidth="1.2" />
+            <circle cx="43" cy="45" r="2" fill="#18181b" />
+            <text x="50" y="55" fill="#3f3f46" fontSize="4" fontWeight="bold" fontFamily="monospace" textAnchor="middle">BMP280</text>
+            {/* Status dot */}
+            <circle cx="32" cy="72" r="1.8" fill={isBlinking ? "#38bdf8" : "#0369a1"} />
+            <text x="52" y="74" fill="#e9d5ff" fontSize="4.5" fontFamily="monospace">BAROMETER</text>
+          </svg>
+        );
+      }
+
+      case "ir_sensor": {
+        const hasDetection = isSimulating && (simState?.sensorReading ?? 0) > 40;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="24" y="20" width="52" height="64" rx="3" fill="#0284c7" stroke="#0369a1" strokeWidth="2" />
+            {/* Emitter (Transparent/Violet) & Detector (Black) */}
+            <path d="M34 20 V10 C34 6 42 6 42 10 V20 Z" fill={hasDetection ? "#c084fc" : "#e0e7ff"} stroke="#818cf8" strokeWidth="1" />
+            <path d="M58 20 V10 C58 6 66 6 66 10 V20 Z" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+            {/* Trimmer */}
+            <rect x="42" y="38" width="16" height="16" rx="2" fill="#3b82f6" stroke="#1d4ed8" strokeWidth="1" />
+            <circle cx="50" cy="46" r="4" fill="#e4e4e7" />
+            <line x1="47" y1="46" x2="53" y2="46" stroke="#3f3f46" strokeWidth="1" />
+            {/* Detection Indicator LED */}
+            <circle cx="36" cy="66" r="2" fill={hasDetection ? "#22c55e" : "#14532d"} />
+            <circle cx="64" cy="66" r="2" fill={isSimulating ? "#ef4444" : "#7f1d1d"} />
+            <text x="50" y="78" fill="#ffffff" fontSize="4.5" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">IR PROX</text>
+          </svg>
+        );
+      }
+
+      case "potentiometer": {
+        const val = simState?.sensorReading ?? 50;
+        const angle = -135 + (val / 100) * 270;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="25" y="22" width="50" height="50" rx="6" fill="#0284c7" stroke="#0369a1" strokeWidth="2" />
+            {/* Outer dial ring */}
+            <circle cx="50" cy="47" r="20" fill="#18181b" stroke="#3f3f46" strokeWidth="2" />
+            <circle cx="50" cy="47" r="16" fill="#27272a" />
+            {/* Rotating Knob with Indicator Notch */}
+            <g style={{ transformOrigin: "50px 47px", transform: `rotate(${angle}deg)`, transition: "transform 0.2s ease" }}>
+              <circle cx="50" cy="47" r="12" fill="#3f3f46" stroke="#71717a" strokeWidth="1" />
+              <line x1="50" y1="37" x2="50" y2="44" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+            </g>
+            {/* 3 Terminal legs at bottom */}
+            <rect x="32" y="72" width="4" height="14" fill="#a1a1aa" />
+            <rect x="48" y="72" width="4" height="14" fill="#a1a1aa" />
+            <rect x="64" y="72" width="4" height="14" fill="#a1a1aa" />
+            <text x="50" y="16" fill="#0284c7" fontSize="5" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">10k POT</text>
+          </svg>
+        );
+      }
+
+      case "lcd1602": {
+        const line1 = "CIRCUIT DOCTOR";
+        const line2 = isSimulating ? `LIVE: ${simState?.sensorReading ?? 65}% OK` : "16x2 I2C READY";
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Outer PCB */}
+            <rect x="10" y="20" width="80" height="60" rx="3" fill="#15803d" stroke="#166534" strokeWidth="2" />
+            {/* LCD Glass Screen Bezel */}
+            <rect x="15" y="26" width="70" height="48" rx="2" fill="#18181b" stroke="#27272a" strokeWidth="1.5" />
+            {/* Backlit Display (Blue LCD) */}
+            <rect
+              x="18"
+              y="29"
+              width="64"
+              height="42"
+              rx="1"
+              fill={isSimulating ? "#0284c7" : "#075985"}
+              stroke="#0369a1"
+              strokeWidth="1"
+            />
+            {/* Row 1 Text */}
+            <text
+              x="50"
+              y="44"
+              fill={isSimulating ? "#f0fdf4" : "#bae6fd"}
+              fontSize="5"
+              fontWeight="bold"
+              fontFamily="monospace"
+              textAnchor="middle"
+              letterSpacing="0.8"
+            >
+              {line1}
+            </text>
+            {/* Row 2 Text */}
+            <text
+              x="50"
+              y="58"
+              fill={isSimulating ? "#fef08a" : "#7dd3fc"}
+              fontSize="4.5"
+              fontFamily="monospace"
+              textAnchor="middle"
+              letterSpacing="0.6"
+            >
+              {line2}
+            </text>
+            {/* Mounting Screws */}
+            <circle cx="14" cy="24" r="1.5" fill="#cbd5e1" />
+            <circle cx="86" cy="24" r="1.5" fill="#cbd5e1" />
+            <circle cx="14" cy="76" r="1.5" fill="#cbd5e1" />
+            <circle cx="86" cy="76" r="1.5" fill="#cbd5e1" />
+          </svg>
+        );
+      }
+
+      case "seven_segment": {
+        const timeDigits = isSimulating ? `12:${String((simState?.tick ?? 0) % 60).padStart(2, "0")}` : "88:88";
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="12" y="24" width="76" height="52" rx="4" fill="#18181b" stroke="#27272a" strokeWidth="2" />
+            {/* Dark Red Display Filter Window */}
+            <rect x="16" y="28" width="68" height="44" rx="2" fill="#450a0a" stroke="#7f1d1d" strokeWidth="1" />
+            {/* 7-Segment Digits */}
+            <text
+              x="50"
+              y="58"
+              fill={isSimulating ? "#ef4444" : "#991b1b"}
+              fontSize="16"
+              fontWeight="bold"
+              fontFamily="monospace"
+              textAnchor="middle"
+              letterSpacing="2"
+              className={isSimulating ? "drop-shadow-[0_0_8px_#ef4444]" : ""}
+            >
+              {timeDigits}
+            </text>
+            <text x="50" y="86" fill="#71717a" fontSize="4.5" fontFamily="monospace" textAnchor="middle">TM1637 4-DIGIT</text>
+          </svg>
+        );
+      }
+
+      case "rgb_led": {
+        const colors = [ "#ef4444", "#a855f7", "#06b6d4", "#22c55e" ];
+        const currentColor = isSimulating ? colors[(simState?.tick ?? 0) % colors.length] : "#ef4444";
+        return (
+          <div className="relative flex items-center justify-center w-full h-full">
+            {isSimulating && (
+              <div
+                className="absolute inset-0 rounded-full blur-md pointer-events-none transition-colors duration-500"
+                style={{ backgroundColor: currentColor, opacity: 0.6 }}
+              />
+            )}
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* LED Clear Lens Dome */}
+              <path
+                d="M34 50 V34 C34 22 66 22 66 34 V50 Z"
+                fill={isSimulating ? currentColor : "#f4f4f5"}
+                stroke="#a1a1aa"
+                strokeWidth="1.8"
+                opacity={isSimulating ? "0.9" : "0.7"}
+              />
+              <rect x="31" y="50" width="38" height="6" rx="1" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1" />
+              {/* 3 internal R G B emitter dies */}
+              <circle cx="43" cy="38" r="2" fill="#ef4444" />
+              <circle cx="50" cy="36" r="2" fill="#22c55e" />
+              <circle cx="57" cy="38" r="2" fill="#3b82f6" />
+              {/* 4 Lead Wires */}
+              <line x1="38" y1="56" x2="38" y2="88" stroke="#a1a1aa" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="46" y1="56" x2="46" y2="92" stroke="#71717a" strokeWidth="2.2" strokeLinecap="round" />
+              <line x1="54" y1="56" x2="54" y2="86" stroke="#a1a1aa" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="62" y1="56" x2="62" y2="88" stroke="#a1a1aa" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </div>
+        );
+      }
+
+      case "dc_motor": {
+        const isSpinning = isSimulating && (simState?.motorRunning ?? true);
+        const spinAngle = isSpinning ? ((simState?.tick ?? 0) * 90) % 360 : 0;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Motor Barrel */}
+            <rect x="25" y="32" width="50" height="42" rx="4" fill="#e4e4e7" stroke="#71717a" strokeWidth="2" />
+            <rect x="35" y="74" width="30" height="8" rx="1" fill="#a1a1aa" stroke="#71717a" strokeWidth="1" />
+            {/* Terminals */}
+            <circle cx="32" cy="78" r="2.5" fill="#ef4444" />
+            <circle cx="68" cy="78" r="2.5" fill="#18181b" />
+            {/* Shaft */}
+            <rect x="47" y="18" width="6" height="14" fill="#f59e0b" stroke="#d97706" strokeWidth="0.8" />
+            {/* Spinning Rotor / Propeller */}
+            <g style={{ transformOrigin: "50px 18px", transform: `rotate(${spinAngle}deg)`, transition: "transform 0.1s linear" }}>
+              <ellipse cx="32" cy="18" rx="16" ry="5" fill="#0284c7" opacity="0.9" />
+              <ellipse cx="68" cy="18" rx="16" ry="5" fill="#0284c7" opacity="0.9" />
+              <circle cx="50" cy="18" r="4" fill="#0369a1" />
+            </g>
+            <text x="50" y="56" fill="#3f3f46" fontSize="6" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">DC MOTOR</text>
+          </svg>
+        );
+      }
+
+      case "stepper_motor": {
+        const stepLed = isSimulating ? (simState?.tick ?? 0) % 4 : -1;
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Stepper Body */}
+            <circle cx="50" cy="42" r="28" fill="#1e40af" stroke="#1d4ed8" strokeWidth="2" />
+            <circle cx="50" cy="42" r="14" fill="#e4e4e7" stroke="#94a3b8" strokeWidth="1.5" />
+            {/* Brass Shaft */}
+            <circle cx="50" cy="42" r="6" fill="#f59e0b" stroke="#d97706" strokeWidth="1" />
+            <line x1="47" y1="36" x2="47" y2="48" stroke="#b45309" strokeWidth="1.5" />
+            {/* ULN2003 Driver Board Bar */}
+            <rect x="18" y="72" width="64" height="18" rx="2" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+            {/* 4 Step Sequence LEDs (A, B, C, D) */}
+            {[28, 42, 56, 70].map((x, idx) => (
+              <circle
+                key={x}
+                cx={x}
+                cy="81"
+                r="2.5"
+                fill={stepLed === idx ? "#facc15" : "#713f12"}
+                className={stepLed === idx ? "animate-pulse" : ""}
+              />
+            ))}
+            <text x="50" y="20" fill="#60a5fa" fontSize="4.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">28BYJ-48</text>
+          </svg>
+        );
+      }
+
+      case "solenoid": {
+        const isActive = isSimulating && ((simState?.tick ?? 0) % 2 === 0);
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Solenoid Frame */}
+            <rect x="24" y="28" width="52" height="44" rx="3" fill="#3f3f46" stroke="#27272a" strokeWidth="2" />
+            {/* Copper Wire Coil Inside */}
+            <rect x="30" y="34" width="40" height="32" rx="2" fill="#b45309" stroke="#92400e" strokeWidth="1" />
+            {[38, 44, 50, 56, 62].map((x) => (
+              <line key={x} x1={x} y1="34" x2={x} y2="66" stroke="#f59e0b" strokeWidth="1.2" />
+            ))}
+            {/* Plunger Core Shaft */}
+            <rect
+              x={isActive ? "10" : "18"}
+              y="44"
+              width="24"
+              height="12"
+              rx="2"
+              fill="#e4e4e7"
+              stroke="#71717a"
+              strokeWidth="1.5"
+              style={{ transition: "x 0.2s cubic-bezier(0.4, 0, 0.2, 1)" }}
+            />
+            {/* Power wires */}
+            <path d="M76 44 H88" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+            <path d="M76 56 H88" stroke="#18181b" strokeWidth="2" strokeLinecap="round" />
+            <text x="50" y="80" fill="#a1a1aa" fontSize="4.5" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">12V SOLENOID</text>
+          </svg>
+        );
+      }
+
+      case "battery_9v": {
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="28" y="24" width="44" height="64" rx="4" fill="#18181b" stroke="#27272a" strokeWidth="2" />
+            {/* Gold/Copper Accent Stripe */}
+            <rect x="28" y="44" width="44" height="14" fill="#d97706" />
+            {/* Terminals (Octagonal male and Round female socket) */}
+            <polygon points="38,16 44,16 46,24 36,24" fill="#a1a1aa" stroke="#71717a" strokeWidth="1" />
+            <circle cx="62" cy="20" r="4.5" fill="#e4e4e7" stroke="#71717a" strokeWidth="1.2" />
+            <circle cx="62" cy="20" r="2" fill="#18181b" />
+            {/* Battery Labels */}
+            <text x="50" y="53" fill="#ffffff" fontSize="6.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">9V</text>
+            <text x="50" y="74" fill="#a1a1aa" fontSize="4.5" fontFamily="sans-serif" textAnchor="middle">DC POWER</text>
+            {isSimulating && (
+              <circle cx="50" cy="34" r="3" fill="#22c55e" className="animate-pulse" />
+            )}
+          </svg>
+        );
+      }
+
+      case "bluetooth_hc05": {
+        const isBlinking = isSimulating && ((simState?.tick ?? 0) % 2 === 0);
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="24" y="14" width="52" height="74" rx="3" fill="#1d4ed8" stroke="#1e40af" strokeWidth="2" />
+            {/* Serpentine PCB Antenna */}
+            <path
+              d="M32 18 H68 M68 22 H32 M32 26 H68"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            {/* Bluetooth Processor Chip */}
+            <rect x="34" y="36" width="32" height="24" rx="1.5" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+            <text x="50" y="50" fill="#e4e4e7" fontSize="5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">HC-05</text>
+            {/* Pairing & Power LEDs */}
+            <circle cx="32" cy="68" r="2" fill={isBlinking ? "#ef4444" : "#7f1d1d"} />
+            <circle cx="68" cy="68" r="2" fill={isSimulating ? "#38bdf8" : "#0369a1"} />
+            {isSimulating && (
+              <path d="M46 72 L50 68 L50 78 L46 74 M50 68 L54 72 L46 76" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" />
+            )}
+            <text x="50" y="82" fill="#bfdbfe" fontSize="4" fontFamily="sans-serif" textAnchor="middle">WIRELESS BT</text>
+          </svg>
+        );
+      }
+
       default:
         return (
           <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -42,6 +42,9 @@ import {
   Activity,
   Sparkles,
   Radio,
+  Search,
+  X,
+  Layers,
 } from "lucide-react";
 
 interface CircuitStudioProps {
@@ -112,20 +115,23 @@ export function CircuitStudioCanvas({
   const getWireColor = (pinId?: string | null): string => {
     if (!pinId) return "#06b6d4";
     const p = pinId.toUpperCase();
-    if (p.includes("VCC") || p.includes("5V") || p.includes("3V3") || p.includes("VIN") || p.includes("12V") || p.includes("ANODE") || p.includes("POS")) {
+    if (p.includes("VCC") || p.includes("5V") || p.includes("3V3") || p.includes("VIN") || p.includes("12V") || p.includes("9V") || p.includes("ANODE") || p.includes("POS")) {
       return "#ef4444"; // Red for Power rails
     }
-    if (p.includes("GND") || p.includes("CATHODE")) {
+    if (p.includes("GND") || p.includes("CATHODE") || p.includes("NEG")) {
       return "#3f3f46"; // Dark slate for Ground
     }
     if (p.includes("SDA") || p.includes("SCL")) {
       return "#a855f7"; // Purple for I2C data/clock
     }
-    if (p.includes("A0") || p.includes("A1") || p.includes("ADC") || p.includes("AOUT") || p.includes("VOUT")) {
+    if (p.includes("A0") || p.includes("A1") || p.includes("ADC") || p.includes("AOUT") || p.includes("VOUT") || p.includes("SIG")) {
       return "#f59e0b"; // Amber for Analog inputs/outputs
     }
-    if (p.includes("PWM") || p.includes("SIG")) {
-      return "#10b981"; // Emerald for PWM / Servo
+    if (p.includes("PWM") || p.includes("RED") || p.includes("GREEN") || p.includes("BLUE")) {
+      return "#10b981"; // Emerald for PWM / RGB
+    }
+    if (p.includes("TX") || p.includes("RX")) {
+      return "#3b82f6"; // Blue for UART serial communication
     }
     return "#06b6d4"; // Cyan for Digital signals
   };
@@ -156,6 +162,10 @@ export function CircuitStudioCanvas({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings">("library");
+
+  // Component Library search and category filter state
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogCategory, setCatalogCategory] = useState<string>("all");
 
   // Simulation Engine State
   const [isSimulating, setIsSimulating] = useState(false);
@@ -188,7 +198,7 @@ export function CircuitStudioCanvas({
 
         if (nextTick === 1) {
           logEntries.push(`[${timestamp}s] [BOOT] Microcontroller initialized at 115200 baud`);
-          logEntries.push(`[${timestamp}s] [POWER] 3.3V and 5.0V voltage rails nominal`);
+          logEntries.push(`[${timestamp}s] [POWER] 3.3V, 5.0V, and 9V voltage rails nominal`);
         }
         if (nextTick % 2 === 0) {
           logEntries.push(
@@ -198,6 +208,16 @@ export function CircuitStudioCanvas({
         if (nextTick % 4 === 0) {
           logEntries.push(
             `[${timestamp}s] [ACTUATOR] GPIO Status: LED=${simLedOn ? "HIGH" : "LOW"}, Relay=${simRelayActive ? "CLOSED" : "OPEN"}`
+          );
+        }
+        if (nextTick % 5 === 0) {
+          logEntries.push(
+            `[${timestamp}s] [IMU] MPU-6050: Accel[X=0.03g, Y=-0.01g, Z=0.99g] Temp: 26.4°C`
+          );
+        }
+        if (nextTick % 6 === 0) {
+          logEntries.push(
+            `[${timestamp}s] [BUS] I2C Bus @ 0x3C (OLED) & 0x27 (LCD1602) display update OK`
           );
         }
         if (simBuzzerActive && nextTick % 3 === 0) {
@@ -584,109 +604,161 @@ export function CircuitStudioCanvas({
 
           {/* Tab 1: Component Library */}
           {activeTab === "library" && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Microcontrollers
-                </span>
-                <div className="mt-1.5 space-y-1.5">
-                  {["esp32", "arduino_uno", "arduino_nano", "pico"].map((type) => {
-                    const def = COMPONENT_DEFINITIONS[type];
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
-                            <ComponentArtwork type={type} size="sm" />
-                          </div>
-                          <span className="font-medium truncate">{def.name}</span>
-                        </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
-                      </button>
-                    );
-                  })}
+            <div className="flex-1 flex flex-col overflow-hidden text-xs">
+              {/* Search Bar & Category Filter */}
+              <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                  <input
+                    type="text"
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    placeholder="Search 28+ components..."
+                    className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-7 text-xs text-zinc-900 placeholder-zinc-400 focus:border-cyan-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  />
+                  {catalogSearch && (
+                    <button
+                      onClick={() => setCatalogSearch("")}
+                      className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none text-[10px]">
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "microcontrollers", label: "MCUs" },
+                    { id: "sensors", label: "Sensors" },
+                    { id: "displays", label: "Displays" },
+                    { id: "actuators", label: "Actuators" },
+                    { id: "passives", label: "Passives" },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCatalogCategory(cat.id)}
+                      className={`px-2 py-0.5 rounded-full whitespace-nowrap transition-colors font-medium ${
+                        catalogCategory === cat.id
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 font-semibold"
+                          : "bg-zinc-200/60 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Sensors
-                </span>
-                <div className="mt-1.5 space-y-1.5">
-                  {["dht22_sensor", "ultrasonic_sensor", "soil_moisture_sensor", "ldr_sensor"].map((type) => {
-                    const def = COMPONENT_DEFINITIONS[type];
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
-                            <ComponentArtwork type={type} size="sm" />
-                          </div>
-                          <span className="font-medium truncate">{def.name}</span>
-                        </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Grouped Component List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                {[
+                  {
+                    id: "microcontrollers",
+                    title: "Microcontrollers & Boards",
+                    items: ["esp32", "arduino_uno", "arduino_nano", "pico"],
+                  },
+                  {
+                    id: "sensors",
+                    title: "Sensors & Detectors",
+                    items: [
+                      "dht22_sensor",
+                      "ultrasonic_sensor",
+                      "soil_moisture_sensor",
+                      "pir_sensor",
+                      "mpu6050",
+                      "mq2_gas_sensor",
+                      "bmp280",
+                      "ir_sensor",
+                      "ldr_sensor",
+                    ],
+                  },
+                  {
+                    id: "displays",
+                    title: "Displays & Visual Outputs",
+                    items: ["oled_display", "lcd1602", "seven_segment", "rgb_led", "led"],
+                  },
+                  {
+                    id: "actuators",
+                    title: "Motors & Actuators",
+                    items: [
+                      "servo_motor",
+                      "dc_motor",
+                      "stepper_motor",
+                      "motor_driver",
+                      "relay_module",
+                      "solenoid",
+                      "buzzer",
+                    ],
+                  },
+                  {
+                    id: "passives",
+                    title: "Passives, Inputs & Power",
+                    items: [
+                      "resistor",
+                      "potentiometer",
+                      "push_button",
+                      "battery_9v",
+                      "bluetooth_hc05",
+                    ],
+                  },
+                ]
+                  .filter((group) => catalogCategory === "all" || catalogCategory === group.id)
+                  .map((group) => {
+                    const filteredItems = group.items.filter((type) => {
+                      const def = COMPONENT_DEFINITIONS[type];
+                      if (!def) return false;
+                      if (!catalogSearch) return true;
+                      const q = catalogSearch.toLowerCase();
+                      return (
+                        def.name.toLowerCase().includes(q) ||
+                        type.toLowerCase().includes(q) ||
+                        def.pins.some((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q))
+                      );
+                    });
 
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Actuators & Displays
-                </span>
-                <div className="mt-1.5 space-y-1.5">
-                  {["oled_display", "servo_motor", "motor_driver", "relay_module", "buzzer"].map((type) => {
-                    const def = COMPONENT_DEFINITIONS[type];
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
-                            <ComponentArtwork type={type} size="sm" />
-                          </div>
-                          <span className="font-medium truncate">{def.name}</span>
-                        </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                    if (filteredItems.length === 0) return null;
 
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Passives
-                </span>
-                <div className="mt-1.5 space-y-1.5">
-                  {["led", "resistor", "push_button"].map((type) => {
-                    const def = COMPONENT_DEFINITIONS[type];
                     return (
-                      <button
-                        key={type}
-                        onClick={() => handleAddComponent(type)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
-                            <ComponentArtwork type={type} size="sm" />
-                          </div>
-                          <span className="font-medium truncate">{def.name}</span>
+                      <div key={group.id}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-mono text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                            {group.title}
+                          </span>
+                          <span className="text-[10px] text-zinc-400 font-mono">
+                            {filteredItems.length}
+                          </span>
                         </div>
-                        <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 shrink-0" />
-                      </button>
+                        <div className="space-y-1.5">
+                          {filteredItems.map((type) => {
+                            const def = COMPONENT_DEFINITIONS[type];
+                            return (
+                              <button
+                                key={type}
+                                onClick={() => handleAddComponent(type)}
+                                className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-left text-zinc-800 hover:border-cyan-500 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-cyan-600 dark:hover:bg-zinc-800 transition-all group shadow-2xs"
+                                title={`Add ${def.name} to canvas`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-0.5 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 shadow-xs">
+                                    <ComponentArtwork type={type} size="sm" />
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-medium truncate text-xs">{def.name}</span>
+                                    <span className="text-[9px] font-mono text-zinc-400 truncate">
+                                      {def.pins.length} Pins • {def.category}
+                                    </span>
+                                  </div>
+                                </div>
+                                <Plus className="h-3.5 w-3.5 text-zinc-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 group-hover:scale-110 transition-transform shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
-                </div>
               </div>
             </div>
           )}
