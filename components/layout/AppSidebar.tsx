@@ -19,6 +19,7 @@ import {
   Layers,
   ChevronRight,
   Zap,
+  FileCode,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -57,6 +58,13 @@ export function AppSidebar({
           icon: Cpu,
           badge: "Canvas",
           description: "Visual schematic & simulation",
+        },
+        {
+          label: "Firmware IDE",
+          href: "/firmware",
+          icon: FileCode,
+          badge: "IDE",
+          description: "Embedded C++ code, serial monitor & AI",
         },
         {
           label: "Circuit Doctor",

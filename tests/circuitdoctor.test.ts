@@ -13,6 +13,7 @@ import {
   getProjectById,
   createProject,
   saveCircuitDesign,
+  saveFirmware,
   createDebugSession,
   updateDebugSession,
   getCatalogueComponents,
@@ -220,6 +221,23 @@ async function runTestSuite() {
     assert.strictEqual(reloaded.circuit.connections.length, 2, "Should persist 2 connections");
   });
 
+  // 5b. Multi-File Firmware Persistence
+  await test("Save and retrieve multi-file firmware without file overwrites", async () => {
+    await saveFirmware(createdProjectId, "main.ino", "void setup() {} void loop() {}");
+    await saveFirmware(createdProjectId, "config.h", "#define LED_PIN 13");
+    await saveFirmware(createdProjectId, "platformio.ini", "[env:esp32]\nplatform = espressif32");
+
+    const proj = await getProjectById(createdProjectId);
+    assert.ok(proj.firmwares && proj.firmwares.length >= 3, "Should persist multiple firmware files");
+    const mainF = proj.firmwares.find((f: any) => f.filename === "main.ino");
+    const configF = proj.firmwares.find((f: any) => f.filename === "config.h");
+    const pioF = proj.firmwares.find((f: any) => f.filename === "platformio.ini");
+
+    assert.ok(mainF && mainF.content.includes("void setup()"), "main.ino content intact");
+    assert.ok(configF && configF.content.includes("#define LED_PIN 13"), "config.h content intact");
+    assert.ok(pioF && pioF.content.includes("[env:esp32]"), "platformio.ini content intact");
+  });
+
   // 6. Diagnostic Session Creation & Test Recording
   let debugSessionId = "";
   await test("Create Circuit Doctor diagnostic session and record multimeter test results", async () => {
@@ -320,6 +338,159 @@ async function runTestSuite() {
 
     const parsedAnalysis = CircuitAnalysisResultSchema.safeParse(sampleAnalysis);
     assert.strictEqual(parsedAnalysis.success, true, "CircuitAnalysisResultSchema should validate correctly");
+  });
+
+  // 10. Real Circuit Logic & Simulation Engine
+  await test("Circuit Engine: Detects real short circuit when VCC is wired directly to GND", async () => {
+    const { evaluateCircuitState } = await import("../lib/circuits/engine");
+    const components = [
+      { id: "esp-1", type: "esp32", label: "ESP32 DevKit" },
+    ];
+    // Connect 3V3 directly to GND
+    const connections = [
+      { id: "w-short", sourceComponentId: "esp-1", sourcePin: "3V3", targetComponentId: "esp-1", targetPin: "GND" },
+    ];
+    const env = {
+      virtualSensors: {
+        soilMoisture: 50,
+        temperature: 25,
+        humidity: 50,
+        distanceCm: 100,
+        lightLux: 300,
+        potentiometerVal: 512,
+        gasPpm: 100,
+        isButtonPressed: false,
+        isSwitchLatching: false,
+        isMotionTriggered: false,
+        isAutoFluctuate: false,
+      },
+      gpioOutputs: {},
+      switchStates: {},
+      simTick: 1,
+    };
+
+    const result = evaluateCircuitState(components, connections, env);
+    assert.strictEqual(result.designRules.some((r) => r.id === "drc-short-circuit"), true, "Must flag short circuit DRC error");
+    assert.strictEqual(result.componentStatuses["esp-1"].isShortCircuited, true, "ESP32 must register short circuited status");
+  });
+
+  await test("Circuit Engine: Detects LED overcurrent when connected directly across power rails without resistor", async () => {
+    const { evaluateCircuitState } = await import("../lib/circuits/engine");
+    const components = [
+      { id: "battery-1", type: "battery_9v", label: "9V Battery" },
+      { id: "led-1", type: "led", label: "Red 5mm LED" },
+    ];
+    const connections = [
+      { id: "w1", sourceComponentId: "battery-1", sourcePin: "POS", targetComponentId: "led-1", targetPin: "ANODE" },
+      { id: "w2", sourceComponentId: "led-1", sourcePin: "CATHODE", targetComponentId: "battery-1", targetPin: "GND" },
+    ];
+    const env = {
+      virtualSensors: {
+        soilMoisture: 50,
+        temperature: 25,
+        humidity: 50,
+        distanceCm: 100,
+        lightLux: 300,
+        potentiometerVal: 512,
+        gasPpm: 100,
+        isButtonPressed: false,
+        isSwitchLatching: false,
+        isMotionTriggered: false,
+        isAutoFluctuate: false,
+      },
+      gpioOutputs: {},
+      switchStates: {},
+      simTick: 1,
+    };
+
+    const result = evaluateCircuitState(components, connections, env);
+    const ledStatus = result.componentStatuses["led-1"];
+    assert.strictEqual(ledStatus.isBurnedOut, true, "LED without resistor on 9V must burn out");
+    assert.strictEqual(result.designRules.some((r) => r.severity === "critical" && r.title.includes("Overcurrent")), true);
+  });
+
+  await test("Circuit Engine: Push button closes loop to illuminate LED with current limiting resistor", async () => {
+    const { evaluateCircuitState } = await import("../lib/circuits/engine");
+    const components = [
+      { id: "battery-1", type: "battery_9v", label: "9V Battery" },
+      { id: "sw-1", type: "push_button", label: "Tactile Switch" },
+      { id: "res-1", type: "resistor", label: "220Ω Resistor" },
+      { id: "led-1", type: "led", label: "Red LED" },
+    ];
+    // Loop: Battery POS -> Switch PIN1, Switch PIN2 -> Resistor PIN1, Resistor PIN2 -> LED ANODE, LED CATHODE -> Battery GND
+    const connections = [
+      { id: "w1", sourceComponentId: "battery-1", sourcePin: "POS", targetComponentId: "sw-1", targetPin: "PIN1" },
+      { id: "w2", sourceComponentId: "sw-1", sourcePin: "PIN2", targetComponentId: "res-1", targetPin: "PIN1" },
+      { id: "w3", sourceComponentId: "res-1", sourcePin: "PIN2", targetComponentId: "led-1", targetPin: "ANODE" },
+      { id: "w4", sourceComponentId: "led-1", sourcePin: "CATHODE", targetComponentId: "battery-1", targetPin: "GND" },
+    ];
+
+    const baseEnv = {
+      virtualSensors: {
+        soilMoisture: 50,
+        temperature: 25,
+        humidity: 50,
+        distanceCm: 100,
+        lightLux: 300,
+        potentiometerVal: 512,
+        gasPpm: 100,
+        isButtonPressed: false,
+        isSwitchLatching: false,
+        isMotionTriggered: false,
+        isAutoFluctuate: false,
+      },
+      gpioOutputs: {},
+      switchStates: {},
+      simTick: 1,
+    };
+
+    // When button is NOT pressed:
+    const offResult = evaluateCircuitState(components, connections, baseEnv);
+    assert.strictEqual(offResult.componentStatuses["led-1"].actuatorActive, false, "LED must be OFF when switch is open");
+
+    // When button IS pressed:
+    const onEnv = { ...baseEnv, switchStates: { "sw-1": true } };
+    const onResult = evaluateCircuitState(components, connections, onEnv);
+    assert.strictEqual(onResult.componentStatuses["led-1"].actuatorActive, true, "LED must illuminate when switch is closed");
+    assert.strictEqual(onResult.componentStatuses["led-1"].isBurnedOut, false, "LED must not burn out because resistor is present");
+  });
+
+  await test("Circuit Engine: Exports valid KiCad Netlist and BOM", async () => {
+    const { exportKiCadNetlist, generateBillOfMaterials } = await import("../lib/circuits/engine");
+    const components = [
+      { id: "esp-1", type: "esp32", label: "ESP32 DevKit" },
+      { id: "dht-1", type: "dht22_sensor", label: "DHT22" },
+    ];
+    const connections = [
+      { id: "c1", sourceComponentId: "esp-1", sourcePin: "3V3", targetComponentId: "dht-1", targetPin: "VCC" },
+      { id: "c2", sourceComponentId: "esp-1", sourcePin: "GND", targetComponentId: "dht-1", targetPin: "GND" },
+    ];
+
+    const bom = generateBillOfMaterials(components);
+    assert.strictEqual(bom.length, 2, "BOM should have 2 components");
+    assert.strictEqual(bom[0].refDes.startsWith("U"), true, "ESP32 should have RefDes U1");
+
+    const netlist = exportKiCadNetlist("Test Project", components, connections);
+    assert.strictEqual(netlist.includes("(export (version \"E\")"), true, "Should produce KiCad export header");
+    assert.strictEqual(netlist.includes("DHT22"), true, "Netlist must contain component DHT22");
+  });
+
+  // 14. Multi-Key Manager & Failover Logic
+  await test("Key Manager: Detects rate limits and prioritizes feature keys with failover pool", async () => {
+    const { getPrioritizedKeysForFeature, isRateLimitOrQuotaError } = await import("../lib/ai/key-manager");
+
+    assert.strictEqual(isRateLimitOrQuotaError(new Error("429 Too Many Requests")), true, "Should identify 429");
+    assert.strictEqual(isRateLimitOrQuotaError(new Error("Quota exceeded: RESOURCE_EXHAUSTED")), true, "Should identify quota");
+    assert.strictEqual(isRateLimitOrQuotaError(new Error("503 Service Unavailable")), true, "Should identify 503 high load");
+    assert.strictEqual(isRateLimitOrQuotaError(new Error("Syntax error in input JSON")), false, "Should not identify syntax error as rate limit");
+
+    const doctorKeys = getPrioritizedKeysForFeature("doctor");
+    const builderKeys = getPrioritizedKeysForFeature("builder");
+    const chatKeys = getPrioritizedKeysForFeature("chat");
+
+    assert.strictEqual(doctorKeys.length >= 1, true, "Doctor feature has valid key pool");
+    assert.strictEqual(builderKeys.length >= 1, true, "Builder feature has valid key pool");
+    assert.strictEqual(chatKeys.length >= 1, true, "Chat feature has valid key pool");
   });
 
   console.log("\n=================================================");

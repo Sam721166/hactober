@@ -1,51 +1,104 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { CircuitStudioCanvas } from "@/components/circuits/CircuitStudioCanvas";
-import { FolderKanban, Save, Sparkles, Layers, Cpu } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-export default function CircuitStudioPage() {
+function CircuitStudioContent() {
+  const searchParams = useSearchParams();
+  const queryProjectId = searchParams.get("projectId");
+
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedCircuit, setSelectedCircuit] = useState<any>(null);
   const [projectName, setProjectName] = useState("Circuit Studio Sandbox");
+  const [canvasKey, setCanvasKey] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    async function initCircuitStudio() {
-      // Check if there is a pending circuit stashed from Project Builder
-      try {
-        const stashed = sessionStorage.getItem("circuitdoctor_temp_circuit");
-        if (stashed) {
-          const parsed = JSON.parse(stashed);
-          if (parsed?.circuit) {
-            setSelectedCircuit(parsed.circuit);
-            setProjectName(parsed.title || "Project Builder Generated Circuit");
-            sessionStorage.removeItem("circuitdoctor_temp_circuit");
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to read sessionStorage circuit:", e);
-      }
+    let active = true;
 
+    async function initCircuitStudio() {
+      setIsLoading(true);
+
+      // 1. Fetch available projects first so workspace selector is always populated
+      let loadedProjects: any[] = [];
       try {
         const res = await fetch("/api/projects");
         const data = await res.json();
-        if (data.ok && data.projects?.length > 0) {
-          setProjects(data.projects);
-          // Set first project circuit
-          const first = data.projects[0];
-          setSelectedProjectId(first.id);
-          setProjectName(first.title);
-          setSelectedCircuit(first.circuit);
+        if (active && data.ok && data.projects?.length > 0) {
+          loadedProjects = data.projects;
+          setProjects(loadedProjects);
         }
       } catch (err) {
         console.error("Failed to load projects:", err);
       }
+
+      if (!active) return;
+
+      // 2. Check if a specific projectId was passed in query params
+      if (queryProjectId && loadedProjects.length > 0) {
+        const matched = loadedProjects.find((p) => p.id === queryProjectId);
+        if (matched) {
+          setSelectedProjectId(matched.id);
+          setProjectName(matched.title);
+          setSelectedCircuit(matched.circuit);
+          setCanvasKey(`project-${matched.id}-${Date.now()}`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 3. Check if there is a pending circuit stashed from Project Builder
+      try {
+        let stashed = typeof window !== "undefined" ? sessionStorage.getItem("circuitdoctor_temp_circuit") : null;
+        if (!stashed && typeof window !== "undefined") {
+          stashed = localStorage.getItem("circuitdoctor_temp_circuit");
+        }
+
+        if (stashed) {
+          const parsed = JSON.parse(stashed);
+          if (parsed?.circuit && active) {
+            setSelectedCircuit(parsed.circuit);
+            setProjectName(parsed.title || "Project Builder Generated Circuit");
+            setSelectedProjectId(parsed.projectId || "temp-builder");
+            setCanvasKey(`builder-${Date.now()}`);
+            setIsLoading(false);
+
+            // Clean up stash after loading to avoid stale reloads
+            try {
+              sessionStorage.removeItem("circuitdoctor_temp_circuit");
+              localStorage.removeItem("circuitdoctor_temp_circuit");
+            } catch (_) {}
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to read cached circuit:", e);
+      }
+
+      // 4. Default fallback: select first project or open default sandbox
+      if (active) {
+        if (loadedProjects.length > 0) {
+          const first = loadedProjects[0];
+          setSelectedProjectId(first.id);
+          setProjectName(first.title);
+          setSelectedCircuit(first.circuit);
+          setCanvasKey(`project-${first.id}-${Date.now()}`);
+        } else {
+          setCanvasKey("default-sandbox");
+        }
+        setIsLoading(false);
+      }
     }
 
     void initCircuitStudio();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [queryProjectId]);
 
   const handleSelectProject = async (id: string) => {
     setSelectedProjectId(id);
@@ -53,49 +106,46 @@ export default function CircuitStudioPage() {
     if (p) {
       setProjectName(p.title);
       setSelectedCircuit(p.circuit);
+      setCanvasKey(`project-${p.id}-${Date.now()}`);
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-xs text-zinc-500 font-mono">
+        <Loader2 className="h-5 w-5 animate-spin text-sky-500 mr-2" />
+        Loading Circuit Studio...
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
-      {/* Top Project Switcher Subbar */}
-      <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-zinc-500">
-            <Cpu className="h-3.5 w-3.5 text-zinc-700 dark:text-zinc-300" />
-            <span className="font-mono text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-              Active Workspace:
-            </span>
-          </div>
-          <select
-            value={selectedProjectId}
-            onChange={(e) => handleSelectProject(e.target.value)}
-            className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title} ({p.board})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-          <span className="rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 dark:border-zinc-800 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-            Visual Node & Wire Schematics
-          </span>
-        </div>
-      </div>
-
-      {/* Canvas Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden h-full">
         <CircuitStudioCanvas
-          key={selectedProjectId}
+          key={canvasKey}
           initialCircuit={selectedCircuit}
           projectId={selectedProjectId}
           projectName={projectName}
+          projects={projects}
+          onSelectProject={handleSelectProject}
         />
       </div>
     </div>
+  );
+}
+
+export default function CircuitStudioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full w-full items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-xs text-zinc-500 font-mono">
+          <Loader2 className="h-5 w-5 animate-spin text-sky-500 mr-2" />
+          Loading Circuit Studio...
+        </div>
+      }
+    >
+      <CircuitStudioContent />
+    </Suspense>
   );
 }

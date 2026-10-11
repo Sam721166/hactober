@@ -47,6 +47,13 @@ export function CommandMenu({ isOpen, onClose }: CommandMenuProps) {
       icon: Cpu,
     },
     {
+      title: "Firmware IDE",
+      description: "Embedded C++ code editor, live serial monitor, waveform plotter & Gemma AI assistant",
+      href: "/firmware",
+      category: "Core Navigation",
+      icon: FileCode,
+    },
+    {
       title: "Circuit Doctor",
       description: "Multimodal AI diagnosis for troubleshooting faulty circuit photographs",
       href: "/circuit-doctor",

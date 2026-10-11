@@ -53,9 +53,40 @@ export default function CircuitDoctorPage() {
     setImageFileName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
-      setSelectedImage(e.target?.result as string);
-      setAnalysis(null);
-      setAnalysisError(null);
+      const rawDataUrl = e.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1600;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          setSelectedImage(optimizedDataUrl);
+        } else {
+          setSelectedImage(rawDataUrl);
+        }
+        setAnalysis(null);
+        setAnalysisError(null);
+      };
+      img.onerror = () => {
+        setSelectedImage(rawDataUrl);
+        setAnalysis(null);
+        setAnalysisError(null);
+      };
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   };

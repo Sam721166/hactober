@@ -12,6 +12,11 @@ import {
   Copy,
   Check,
   Loader2,
+  Sliders,
+  Code,
+  FileText,
+  GitFork,
+  PanelLeft,
 } from "lucide-react";
 
 function ProjectBuilderContent() {
@@ -31,6 +36,7 @@ function ProjectBuilderContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(true);
 
   // Submit project plan generation
   const handleGenerate = async (e: React.FormEvent) => {
@@ -105,23 +111,23 @@ function ProjectBuilderContent() {
   // Open in Circuit Studio
   const handleOpenInStudio = () => {
     if (generatedPlan?.circuit) {
+      const payload = {
+        title: generatedPlan.title,
+        circuit: generatedPlan.circuit,
+        projectId: savedProjectId || undefined,
+      };
       try {
-        sessionStorage.setItem(
-          "circuitdoctor_temp_circuit",
-          JSON.stringify({
-            title: generatedPlan.title,
-            circuit: generatedPlan.circuit,
-          })
-        );
+        sessionStorage.setItem("circuitdoctor_temp_circuit", JSON.stringify(payload));
+        localStorage.setItem("circuitdoctor_temp_circuit", JSON.stringify(payload));
       } catch (e) {
-        console.warn("Could not cache circuit to sessionStorage:", e);
+        console.warn("Could not cache circuit to storage:", e);
       }
     }
 
     if (savedProjectId) {
-      router.push(`/projects/${savedProjectId}`);
+      router.push(`/circuit-studio?projectId=${savedProjectId}`);
     } else {
-      router.push("/circuit-studio");
+      router.push("/circuit-studio?from=builder");
     }
   };
 
@@ -184,124 +190,144 @@ function ProjectBuilderContent() {
         {/* 2-Column Interface: Left Input, Right Generated Guide */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Left Column: Requirements Form */}
-          <div className="lg:col-span-4">
-            <form
-              onSubmit={handleGenerate}
-              className="rounded-xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 space-y-4 text-xs"
-            >
-              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
-                <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                  Project Parameters
-                </span>
-                <span className="text-[10px] font-mono text-zinc-400">Gemma 4</span>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
-                  Project Concept / Goal *
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={idea}
-                  onChange={(e) => setIdea(e.target.value)}
-                  placeholder="e.g. Build an automated plant watering system using an ESP32 with moisture sensor and 5V mini water pump..."
-                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 p-2.5 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Target MCU</label>
-                  <select
-                    value={board}
-                    onChange={(e) => setBoard(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="ESP32">ESP32 DevKit V1</option>
-                    <option value="Arduino Uno">Arduino Uno R3</option>
-                    <option value="Arduino Nano">Arduino Nano V3</option>
-                    <option value="Raspberry Pi Pico">Raspberry Pi Pico</option>
-                  </select>
+          {(!generatedPlan || isFormOpen) && (
+            <div className={generatedPlan ? "lg:col-span-4" : "lg:col-span-5"}>
+              <form
+                onSubmit={handleGenerate}
+                className="rounded-xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 space-y-4 text-xs"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                  <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                    Project Parameters
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-zinc-400">Gemma 4</span>
+                    {generatedPlan && (
+                      <button
+                        type="button"
+                        onClick={() => setIsFormOpen(false)}
+                        className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-0.5 rounded"
+                        title="Collapse parameters"
+                      >
+                        <PanelLeft className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="IoT">IoT & Cloud</option>
-                    <option value="Robotics">Robotics & Vehicles</option>
-                    <option value="Sensors">Sensors & Weather</option>
-                    <option value="Home Automation">Home Automation</option>
-                    <option value="Audio & Displays">Audio & Displays</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Budget Target (INR ₹)</label>
-                  <input
-                    type="number"
-                    value={budgetInr}
-                    onChange={(e) => setBudgetInr(e.target.value)}
-                    placeholder="1500"
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                    Project Concept / Goal *
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={idea}
+                    onChange={(e) => setIdea(e.target.value)}
+                    placeholder="e.g. Build an automated plant watering system using an ESP32 with moisture sensor and 5V mini water pump..."
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 p-2.5 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-100"
                   />
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Difficulty</label>
-                  <select
-                    value={experienceLevel}
-                    onChange={(e) => setExperienceLevel(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Target MCU</label>
+                    <select
+                      value={board}
+                      onChange={(e) => setBoard(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                      <option value="ESP32">ESP32 DevKit V1</option>
+                      <option value="Arduino Uno">Arduino Uno R3</option>
+                      <option value="Arduino Nano">Arduino Nano V3</option>
+                      <option value="Raspberry Pi Pico">Raspberry Pi Pico</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Category</label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                      <option value="IoT">IoT & Cloud</option>
+                      <option value="Robotics">Robotics & Vehicles</option>
+                      <option value="Sensors">Sensors & Weather</option>
+                      <option value="Home Automation">Home Automation</option>
+                      <option value="Audio & Displays">Audio & Displays</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
-                  Available Components (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={availableComponents}
-                  onChange={(e) => setAvailableComponents(e.target.value)}
-                  placeholder="e.g. DHT22, 0.96 OLED, Breadboard"
-                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Budget Target (INR ₹)</label>
+                    <input
+                      type="number"
+                      value={budgetInr}
+                      onChange={(e) => setBudgetInr(e.target.value)}
+                      placeholder="1500"
+                      className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                  </div>
 
-              <button
-                type="submit"
-                disabled={!idea.trim() || isGenerating}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-zinc-950 via-zinc-900 to-violet-950 hover:to-violet-900 py-2.5 font-semibold text-white shadow-xs disabled:opacity-50 transition-all text-xs ring-1 ring-violet-500/30"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
-                    <span>Architecting Circuit...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 text-violet-300" />
-                    <span>Generate Project Plan</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">Difficulty</label>
+                    <select
+                      value={experienceLevel}
+                      onChange={(e) => setExperienceLevel(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                      <option value="Beginner">Beginner</option>
+                      <option value="Intermediate">Intermediate</option>
+                      <option value="Advanced">Advanced</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                    Available Components (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={availableComponents}
+                    onChange={(e) => setAvailableComponents(e.target.value)}
+                    placeholder="e.g. DHT22, 0.96 OLED, Breadboard"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!idea.trim() || isGenerating}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-zinc-950 via-zinc-900 to-violet-950 hover:to-violet-900 py-2.5 font-semibold text-white shadow-xs disabled:opacity-50 transition-all text-xs ring-1 ring-violet-500/30"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+                      <span>Architecting Circuit...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 text-violet-300" />
+                      <span>Generate Project Plan</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
 
           {/* Right Column: Generated Plan View */}
-          <div className="lg:col-span-8 flex flex-col">
+          <div className={
+            !generatedPlan
+              ? "lg:col-span-7 flex flex-col"
+              : isFormOpen
+              ? "lg:col-span-8 flex flex-col transition-all"
+              : "lg:col-span-12 flex flex-col transition-all"
+          }>
             {isGenerating ? (
               <div className="flex h-full min-h-[460px] flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <Loader2 className="h-8 w-8 animate-spin text-zinc-900 dark:text-zinc-100 mb-4" />
@@ -314,70 +340,107 @@ function ProjectBuilderContent() {
               </div>
             ) : generatedPlan ? (
               <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 flex-1 flex flex-col space-y-4">
-                {/* Title & Estimated Cost Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800 gap-2">
-                  <div>
-                    <h2 className="text-base font-bold text-zinc-950 dark:text-zinc-100">
-                      {generatedPlan.title}
-                    </h2>
-                    <span className="font-mono text-xs text-zinc-500">
-                      Target: <span className="font-semibold text-zinc-900 dark:text-zinc-100">{board}</span> • Cost: <span className="font-semibold text-zinc-900 dark:text-zinc-100">{generatedPlan.estimatedCost}</span>
-                    </span>
+                {/* Title & Controls Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-200/80 pb-3 dark:border-zinc-800/80 gap-3">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base font-bold text-zinc-950 dark:text-zinc-100 tracking-tight">
+                        {generatedPlan.title}
+                      </h2>
+                      <span className="rounded-md border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300">
+                        {board}
+                      </span>
+                      {generatedPlan.estimatedCost && (
+                        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                          Est. {generatedPlan.estimatedCost}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsFormOpen(!isFormOpen)}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50/80 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors shadow-2xs"
+                      title={isFormOpen ? "Expand workspace (hide parameters)" : "Show parameters sidebar"}
+                    >
+                      <PanelLeft className="h-3.5 w-3.5 text-zinc-500" />
+                      <span>{isFormOpen ? "Expand" : "Parameters"}</span>
+                    </button>
+
+                    <button
+                      onClick={handleOpenInStudio}
+                      className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-sky-400/30"
+                      title="Open this circuit in full Circuit Studio"
+                    >
+                      <Cpu className="h-3.5 w-3.5" />
+                      <span>Studio</span>
+                    </button>
                   </div>
                 </div>
 
                 {/* Sub Navigation Tabs */}
-                <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs overflow-x-auto gap-1">
+                <div className="flex items-center gap-1.5 p-1 bg-zinc-100/80 dark:bg-zinc-950/70 rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 overflow-x-auto text-xs">
                   <button
                     onClick={() => setActiveTab("circuit")}
-                    className={`py-2 px-3 font-medium border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
                       activeTab === "circuit"
-                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        ? "bg-white dark:bg-zinc-800 text-sky-600 dark:text-sky-400 shadow-xs font-semibold ring-1 ring-zinc-200/50 dark:ring-zinc-700/50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/40 dark:hover:bg-zinc-900/40"
                     }`}
                   >
                     <Layers className="h-3.5 w-3.5" />
-                    <span>Circuit Diagram & Simulation</span>
+                    <span>Circuit & Simulation</span>
                   </button>
                   <button
                     onClick={() => setActiveTab("overview")}
-                    className={`py-2 px-3 font-medium border-b-2 whitespace-nowrap transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
                       activeTab === "overview"
-                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs font-semibold ring-1 ring-zinc-200/50 dark:ring-zinc-700/50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/40 dark:hover:bg-zinc-900/40"
                     }`}
                   >
-                    Overview & BOM
+                    <FileText className="h-3.5 w-3.5" />
+                    <span>Overview & BOM</span>
                   </button>
                   <button
                     onClick={() => setActiveTab("wiring")}
-                    className={`py-2 px-3 font-medium border-b-2 whitespace-nowrap transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
                       activeTab === "wiring"
-                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs font-semibold ring-1 ring-zinc-200/50 dark:ring-zinc-700/50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/40 dark:hover:bg-zinc-900/40"
                     }`}
                   >
-                    Wiring Table ({generatedPlan.wiringInstructions?.length || 0})
+                    <GitFork className="h-3.5 w-3.5" />
+                    <span>Wiring Table</span>
+                    <span className="rounded-full bg-zinc-200/80 px-1.5 py-0.2 text-[10px] font-mono dark:bg-zinc-700">
+                      {generatedPlan.wiringInstructions?.length || 0}
+                    </span>
                   </button>
                   <button
                     onClick={() => setActiveTab("firmware")}
-                    className={`py-2 px-3 font-medium border-b-2 whitespace-nowrap transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
                       activeTab === "firmware"
-                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs font-semibold ring-1 ring-zinc-200/50 dark:ring-zinc-700/50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/40 dark:hover:bg-zinc-900/40"
                     }`}
                   >
-                    Starter Firmware
+                    <Code className="h-3.5 w-3.5" />
+                    <span>Starter Firmware</span>
                   </button>
                   <button
                     onClick={() => setActiveTab("steps")}
-                    className={`py-2 px-3 font-medium border-b-2 whitespace-nowrap transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
                       activeTab === "steps"
-                        ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-semibold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs font-semibold ring-1 ring-zinc-200/50 dark:ring-zinc-700/50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/40 dark:hover:bg-zinc-900/40"
                     }`}
                   >
-                    Build Steps ({generatedPlan.buildSteps?.length || 0})
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Build Steps</span>
+                    <span className="rounded-full bg-zinc-200/80 px-1.5 py-0.2 text-[10px] font-mono dark:bg-zinc-700">
+                      {generatedPlan.buildSteps?.length || 0}
+                    </span>
                   </button>
                 </div>
 
