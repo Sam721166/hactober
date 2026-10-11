@@ -318,6 +318,11 @@ export async function getProjectById(idOrSlug: string): Promise<any | null> {
   } catch (error) {
     console.warn("Using memory store for getProjectById:", (error as Error).message);
     const proj = memoryStore.projects.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
+    if (proj) {
+      if (!proj.firmwares && proj.firmware) {
+        proj.firmwares = [{ ...proj.firmware, filename: proj.firmware.filename || "main.ino" }];
+      }
+    }
     return proj || null;
   }
 }
@@ -453,6 +458,53 @@ export async function createProject(data: {
   }
 }
 
+export async function updateProject(
+  id: string,
+  updates: { title?: string; description?: string }
+) {
+  await initDb();
+  try {
+    const db = getDbPool();
+    const sets: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (updates.title) {
+      sets.push(`title = $${idx++}`);
+      values.push(updates.title);
+    }
+    if (updates.description) {
+      sets.push(`description = $${idx++}`);
+      values.push(updates.description);
+    }
+    sets.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(id);
+    await db.query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $${idx}`, values);
+  } catch (err: any) {
+    console.warn("Updating project in memory store:", err.message);
+  }
+  const p = memoryStore.projects.find((proj) => proj.id === id);
+  if (p) {
+    if (updates.title) p.title = updates.title;
+    if (updates.description) p.description = updates.description;
+  }
+  return await getProjectById(id);
+}
+
+export async function deleteProject(id: string) {
+  await initDb();
+  try {
+    const db = getDbPool();
+    await db.query("DELETE FROM projects WHERE id = $1", [id]);
+  } catch (err: any) {
+    console.warn("Deleting project in memory store:", err.message);
+  }
+  const idx = memoryStore.projects.findIndex((p) => p.id === id);
+  if (idx !== -1) {
+    memoryStore.projects.splice(idx, 1);
+  }
+  return { ok: true, id };
+}
+
 export async function saveCircuitDesign(
   projectId: string,
   circuitData: { components: any[]; connections: any[] }
@@ -494,15 +546,17 @@ export async function saveFirmware(
   await initDb();
   try {
     const db = getDbPool();
+    const fileId = `firmware-${projectId}-${filename}`;
     await db.query(
       `INSERT INTO firmware_files (id, project_id, filename, content, extracted_pins, updated_at)
        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE SET
+         filename = EXCLUDED.filename,
          content = EXCLUDED.content,
          extracted_pins = EXCLUDED.extracted_pins,
          updated_at = CURRENT_TIMESTAMP`,
       [
-        `firmware-${projectId}`,
+        fileId,
         projectId,
         filename,
         content,
@@ -514,7 +568,25 @@ export async function saveFirmware(
     console.warn("Saving firmware in memory store:", (error as Error).message);
     const p = memoryStore.projects.find((pr) => pr.id === projectId);
     if (p) {
-      p.firmware = { filename, language: "arduino", content };
+      if (!p.firmwares) {
+        p.firmwares = p.firmware ? [{ ...p.firmware }] : [];
+      }
+      const existing = p.firmwares.find((f: any) => f.filename === filename || f.name === filename);
+      if (existing) {
+        existing.content = content;
+        existing.extractedPins = extractedPins;
+      } else {
+        p.firmwares.push({
+          id: `fw-${Date.now()}-${filename}`,
+          filename,
+          language: filename.endsWith(".h") || filename.endsWith(".hpp") ? "cpp" : "arduino",
+          content,
+          extractedPins: extractedPins || [],
+        });
+      }
+      if (filename === "main.ino" || !p.firmware) {
+        p.firmware = { filename, language: "arduino", content };
+      }
     }
     return { ok: true, projectId };
   }

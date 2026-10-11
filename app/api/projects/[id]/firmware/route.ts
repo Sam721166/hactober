@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveFirmware } from "@/lib/db";
+import { saveFirmware, getProjectById } from "@/lib/db";
 import { extractPinsFromCode } from "@/lib/analysis/firmware";
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const project = await getProjectById(id);
+    if (!project) {
+      return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+    }
+    return NextResponse.json({
+      ok: true,
+      firmwares: project.firmwares || (project.firmware ? [project.firmware] : []),
+    });
+  } catch (error: any) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
 
 export async function POST(
   req: NextRequest,

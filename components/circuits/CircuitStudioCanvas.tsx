@@ -27,6 +27,17 @@ import { VirtualSensorsPanel, VirtualSensorValues } from "./VirtualSensorsPanel"
 import { SerialMonitorDrawer, SerialLogEntry, TelemetryPoint } from "./SerialMonitorDrawer";
 import { COMPONENT_DEFINITIONS, ComponentDefinition } from "@/lib/circuits/registry";
 import {
+  evaluateCircuitState,
+  probePinMultimeter,
+  generateBillOfMaterials,
+  exportKiCadNetlist,
+  CircuitComponent,
+  CircuitConnection,
+  MultimeterReading,
+  DesignRuleIssue,
+  BomItem,
+} from "@/lib/circuits/engine";
+import {
   Cpu,
   Plus,
   Trash2,
@@ -53,6 +64,14 @@ import {
   ExternalLink,
   Undo2,
   Redo2,
+  Gauge,
+  FileCode,
+  FileSpreadsheet,
+  Flame,
+  Wrench,
+  ShieldAlert,
+  ChevronDown,
+  PanelLeft,
 } from "lucide-react";
 
 interface CircuitStudioProps {
@@ -66,6 +85,8 @@ interface CircuitStudioProps {
   diagramOnly?: boolean;
   allowSimulation?: boolean;
   onOpenStudio?: () => void;
+  projects?: Array<{ id: string; title: string; board?: string }>;
+  onSelectProject?: (id: string) => void;
 }
 
 interface CircuitSnapshot {
@@ -136,6 +157,8 @@ export function CircuitStudioCanvas({
   diagramOnly = false,
   allowSimulation = true,
   onOpenStudio,
+  projects,
+  onSelectProject,
 }: CircuitStudioProps) {
   const nodeTypes = useMemo(() => ({ hardwareNode: HardwareNode }), []);
 
@@ -233,17 +256,63 @@ export function CircuitStudioCanvas({
     return "#06b6d4"; // Cyan for Digital signals
   };
 
-  // Convert initial connections to React Flow edges
+  // Convert initial connections to React Flow edges with pin handle sanitization
   const initialEdges: Edge[] = useMemo(() => {
     if (!initialCircuit?.connections) return [];
+
+    const resolvePinHandle = (nodeId: string, requestedPin: string): string => {
+      const node = initialNodes.find((n) => n.id === nodeId);
+      if (!node || !(node.data as any)?.pins) return requestedPin;
+      const pins: any[] = (node.data as any).pins || [];
+      if (pins.length === 0) return requestedPin;
+
+      // 1. Exact pin.id match
+      if (pins.some((p) => p.id === requestedPin)) return requestedPin;
+
+      // 2. Case-insensitive or pin.name match
+      const lower = requestedPin.trim().toLowerCase();
+      const match = pins.find(
+        (p) => p.id.toLowerCase() === lower || p.name.toLowerCase() === lower || p.name.toLowerCase().startsWith(lower)
+      );
+      if (match) return match.id;
+
+      // 3. Handle D<n> <-> GPIO<n> mapping (common with ESP32/Arduino)
+      if (requestedPin.toUpperCase().startsWith("D")) {
+        const num = requestedPin.slice(1);
+        const gpio = pins.find((p) => p.id.toUpperCase() === `GPIO${num}` || p.name.toUpperCase().startsWith(`D${num}`));
+        if (gpio) return gpio.id;
+      }
+      if (requestedPin.toUpperCase().startsWith("GPIO")) {
+        const num = requestedPin.slice(4);
+        const d = pins.find((p) => p.id.toUpperCase() === `D${num}` || p.name.toUpperCase().startsWith(`D${num}`));
+        if (d) return d.id;
+      }
+
+      // 4. Power & Ground aliases
+      if (lower === "vcc" || lower === "vin" || lower === "5v" || lower === "3v3" || lower === "power") {
+        const pwr = pins.find((p) => p.type === "power");
+        if (pwr) return pwr.id;
+      }
+      if (lower.includes("gnd") || lower.includes("ground")) {
+        const gnd = pins.find((p) => p.type === "gnd");
+        if (gnd) return gnd.id;
+      }
+
+      // 5. Fallback to first matching type or first available pin to prevent ReactFlow handle error #008
+      const digital = pins.find((p) => p.type === "digital" || p.type === "analog" || p.type === "pwm" || p.type === "i2c");
+      return digital ? digital.id : pins[0].id;
+    };
+
     return initialCircuit.connections.map((c) => {
-      const wireColor = getWireColor(c.sourcePin);
+      const sourceHandle = resolvePinHandle(c.sourceComponentId, c.sourcePin);
+      const targetHandle = resolvePinHandle(c.targetComponentId, c.targetPin);
+      const wireColor = getWireColor(sourceHandle);
       return {
         id: c.id,
         source: c.sourceComponentId,
-        sourceHandle: c.sourcePin,
+        sourceHandle,
         target: c.targetComponentId,
-        targetHandle: c.targetPin,
+        targetHandle,
         type: "smoothstep",
         animated: c.status === "proposed",
         style: { stroke: wireColor, strokeWidth: 2.5 },
@@ -251,14 +320,30 @@ export function CircuitStudioCanvas({
         data: { status: c.status || "confirmed", evidence: c.evidence || "User connected" },
       };
     });
-  }, [initialCircuit]);
+  }, [initialCircuit, initialNodes]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings">("library");
+  const [activeTab, setActiveTab] = useState<"library" | "inspector" | "warnings" | "bom">("library");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as any)) {
+        setIsExportOpen(false);
+      }
+    }
+    if (isExportOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isExportOpen]);
+
   const mounted = useSyncExternalStore(
     emptySubscribe,
     () => true,
@@ -535,49 +620,170 @@ export function CircuitStudioCanvas({
   const [manualRelayOverride, setManualRelayOverride] = useState<boolean | null>(null);
   const [buzzerBeepTimer, setBuzzerBeepTimer] = useState<number>(0);
 
+  // Multimeter & interactive circuit physics state
+  const [multimeterActive, setMultimeterActive] = useState<boolean>(false);
+  const [probedMeasurement, setProbedMeasurement] = useState<MultimeterReading | null>(null);
+  const [switchStates, setSwitchStates] = useState<Record<string, boolean>>({});
+  const [componentProperties, setComponentProperties] = useState<Record<string, Record<string, any>>>({});
+
   // Structured Serial Logs & Live Telemetry History for Plotter
   const [structuredLogs, setStructuredLogs] = useState<SerialLogEntry[]>([
     {
       id: "boot-init",
       timestamp: "0.0s",
       tag: "BOOT",
-      text: "System Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
-      raw: "[0.0s] [BOOT] System Ready. Click 'Run Simulation' to energize circuit and execute firmware logic.",
+      text: "System Ready. Click 'Run Simulation' to energize circuit and execute real-world firmware logic.",
+      raw: "[0.0s] [BOOT] System Ready. Click 'Run Simulation' to energize circuit and execute real-world firmware logic.",
     },
   ]);
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryPoint[]>([]);
 
-  // Derived simulation states based on sensor and clock ticks
-  const simLedOn =
-    manualLedOverride !== null
-      ? manualLedOverride
-      : isSimulating &&
-        (virtualSensors.soilMoisture > 50 ||
-          virtualSensors.isButtonPressed ||
-          virtualSensors.isSwitchLatching ||
-          simTick % 2 === 0);
+  // Interactive controls
+  const handleToggleSwitch = useCallback((nodeId: string) => {
+    pushSnapshot();
+    setSwitchStates((prev) => ({
+      ...prev,
+      [nodeId]: !prev[nodeId],
+    }));
+  }, [pushSnapshot]);
 
-  const simServoAngle = isSimulating
-    ? Math.round((virtualSensors.potentiometerVal / 1023) * 180)
-    : 0;
+  const handleUpdateProperty = useCallback((nodeId: string, key: string, value: any) => {
+    setComponentProperties((prev) => ({
+      ...prev,
+      [nodeId]: {
+        ...(prev[nodeId] || {}),
+        [key]: value,
+      },
+    }));
+  }, []);
 
-  const simBuzzerActive =
-    buzzerBeepTimer > 0 ||
-    (isSimulating &&
-      (virtualSensors.soilMoisture > 80 ||
-        virtualSensors.gasPpm > 600 ||
-        virtualSensors.isButtonPressed ||
-        virtualSensors.isMotionTriggered ||
-        virtualSensors.distanceCm < 25));
+  // Adapt nodes and edges to physics engine format
+  const circuitComponents: CircuitComponent[] = useMemo(() => {
+    return nodes.map((n) => ({
+      id: n.id,
+      type: (n.data as any)?.type || "",
+      label: (n.data as any)?.label || "",
+      x: n.position.x,
+      y: n.position.y,
+      properties: {
+        ...((n.data as any)?.properties || {}),
+        ...(componentProperties[n.id] || {}),
+        isPressed: Boolean(switchStates[n.id]),
+      },
+    }));
+  }, [nodes, componentProperties, switchStates]);
 
-  const simRelayActive =
-    manualRelayOverride !== null
-      ? manualRelayOverride
-      : isSimulating && (virtualSensors.soilMoisture > 60 || virtualSensors.gasPpm > 450);
+  const circuitConnections: CircuitConnection[] = useMemo(() => {
+    return edges.map((e) => ({
+      id: e.id,
+      sourceComponentId: e.source,
+      sourcePin: e.sourceHandle || "",
+      targetComponentId: e.target,
+      targetPin: e.targetHandle || "",
+      status: (e.data as any)?.status,
+      evidence: (e.data as any)?.evidence,
+    }));
+  }, [edges]);
 
-  const simOledMsg = isSimulating
-    ? `SOIL: ${virtualSensors.soilMoisture}% | ${virtualSensors.temperature}°C`
-    : "128x64 SSD1306";
+  // Compute live physics & electrical design state
+  const circuitEvaluation = useMemo(() => {
+    return evaluateCircuitState(circuitComponents, circuitConnections, {
+      virtualSensors,
+      gpioOutputs: {
+        ...(manualLedOverride !== null
+          ? {
+              "esp32-1:GPIO4": manualLedOverride,
+              "arduino_uno-1:D13": manualLedOverride,
+              "arduino_nano-1:D13": manualLedOverride,
+            }
+          : {}),
+      },
+      switchStates,
+      simTick,
+    });
+  }, [circuitComponents, circuitConnections, virtualSensors, manualLedOverride, switchStates, simTick]);
+
+  // Actuator active states derived directly from circuit evaluation
+  const anyLedActive = useMemo(() => {
+    return Object.entries(circuitEvaluation.componentStatuses).some(
+      ([id, st]) => id.startsWith("led") && st.actuatorActive && !st.isBurnedOut
+    );
+  }, [circuitEvaluation]);
+
+  const anyBuzzerActive = useMemo(() => {
+    return Object.entries(circuitEvaluation.componentStatuses).some(
+      ([id, st]) => id.startsWith("buzzer") && st.actuatorActive
+    );
+  }, [circuitEvaluation]);
+
+  const anyRelayActive = useMemo(() => {
+    return Object.entries(circuitEvaluation.componentStatuses).some(
+      ([id, st]) => id.startsWith("relay") && st.actuatorActive
+    );
+  }, [circuitEvaluation]);
+
+  const simLedOn = anyLedActive;
+  const simBuzzerActive = buzzerBeepTimer > 0 || anyBuzzerActive;
+  const simRelayActive = anyRelayActive;
+  const simServoAngle = Math.round((virtualSensors.potentiometerVal / 1023) * 180);
+  const simOledMsg = `SOIL: ${virtualSensors.soilMoisture}% | ${virtualSensors.temperature}°C`;
+
+  // Multimeter pin probe handler
+  const handleProbePin = useCallback(
+    (nodeId: string, pinId: string) => {
+      const reading = probePinMultimeter(
+        nodeId,
+        pinId,
+        circuitComponents,
+        circuitEvaluation.pinToNet,
+        circuitEvaluation.componentStatuses
+      );
+      setProbedMeasurement(reading);
+    },
+    [circuitComponents, circuitEvaluation]
+  );
+
+  // Industry-standard KiCad Netlist & Bill of Materials export
+  const handleExportKiCad = useCallback(() => {
+    const netlistContent = exportKiCadNetlist(projectName, circuitComponents, circuitConnections);
+    const blob = new Blob([netlistContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-schematic.net`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [projectName, circuitComponents, circuitConnections]);
+
+  const handleExportBom = useCallback(() => {
+    const bomItems = generateBillOfMaterials(circuitComponents);
+    const headers = [
+      "Reference",
+      "Component Name",
+      "Category",
+      "Quantity",
+      "Specifications",
+      "Footprint",
+      "Estimated Cost",
+    ];
+    const rows = bomItems.map((b) => [
+      `"${b.refDes}"`,
+      `"${b.name}"`,
+      `"${b.category}"`,
+      b.quantity,
+      `"${b.specs}"`,
+      `"${b.footprint}"`,
+      `"${b.estimatedCost}"`,
+    ]);
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-BOM.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [projectName, circuitComponents]);
 
   // Virtual Firmware Command Parser (TX interactive terminal)
   const handleSendCommand = useCallback((cmd: string) => {
@@ -691,12 +897,20 @@ export function CircuitStudioCanvas({
   // Monotonic log ID generator and tick tracking refs
   const simTickRef = useRef(0);
   const logCounterRef = useRef(0);
-  const simParamsRef = useRef({
+  const simParamsRef = useRef<{
+    virtualSensors: typeof virtualSensors;
+    simLedOn: boolean;
+    simRelayActive: boolean;
+    simBuzzerActive: boolean;
+    baudRate: number;
+    circuitComponents?: CircuitComponent[];
+  }>({
     virtualSensors,
     simLedOn,
     simRelayActive,
     simBuzzerActive,
     baudRate,
+    circuitComponents,
   });
 
   useEffect(() => {
@@ -706,8 +920,9 @@ export function CircuitStudioCanvas({
       simRelayActive,
       simBuzzerActive,
       baudRate,
+      circuitComponents,
     };
-  }, [virtualSensors, simLedOn, simRelayActive, simBuzzerActive, baudRate]);
+  }, [virtualSensors, simLedOn, simRelayActive, simBuzzerActive, baudRate, circuitComponents]);
 
   // Simulation Clock Tick Loop
   useEffect(() => {
@@ -727,13 +942,24 @@ export function CircuitStudioCanvas({
         simRelayActive: curRelay,
         simBuzzerActive: curBuzzer,
         baudRate: curBaud,
-      } = simParamsRef.current;
+        circuitComponents: curComps = [],
+      } = simParamsRef.current as any;
+
+      const compTypes = new Set((curComps || []).map((c: any) => (c.type || "").toLowerCase()));
+      const hasMcu = compTypes.has("esp32") || compTypes.has("arduino_uno") || compTypes.has("arduino_nano") || compTypes.has("pico") || curComps.length === 0;
+      const hasAdc = compTypes.has("soil_moisture_sensor") || compTypes.has("dht22_sensor") || compTypes.has("potentiometer") || compTypes.has("ldr_sensor") || curComps.length === 0;
+      const hasActuator = compTypes.has("led") || compTypes.has("relay_module") || compTypes.has("servo_motor") || compTypes.has("dc_motor") || curComps.length === 0;
+      const hasImu = compTypes.has("mpu6050");
+      const hasI2cBus = compTypes.has("oled_display") || compTypes.has("lcd1602");
+      const hasGas = compTypes.has("mq2_gas_sensor");
+      const hasSonar = compTypes.has("ultrasonic_sensor");
+      const hasBuzzer = compTypes.has("buzzer");
 
       const timestamp = `${(nextTick * 0.8).toFixed(1)}s`;
       const logEntries: SerialLogEntry[] = [];
       const createId = (prefix: string) => `${prefix}-${++logCounterRef.current}-${nextTick}`;
 
-      if (nextTick === 1) {
+      if (nextTick === 1 && hasMcu) {
         logEntries.push({
           id: createId("boot"),
           timestamp,
@@ -749,7 +975,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [POWER] 3.3V, 5.0V, and 9V voltage rails nominal`,
         });
       }
-      if (nextTick % 2 === 0) {
+      if (hasAdc && nextTick % 2 === 0) {
         logEntries.push({
           id: createId("adc"),
           timestamp,
@@ -758,7 +984,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [SENSOR] ADC Read: ${Math.round(curSensors.soilMoisture * 40.95)} (Soil: ${curSensors.soilMoisture}%, Temp: ${curSensors.temperature}°C)`,
         });
       }
-      if (nextTick % 4 === 0) {
+      if (hasActuator && nextTick % 4 === 0) {
         logEntries.push({
           id: createId("act"),
           timestamp,
@@ -767,7 +993,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [ACTUATOR] GPIO Status: LED=${curLed ? "HIGH" : "LOW"}, Relay=${curRelay ? "CLOSED" : "OPEN"}`,
         });
       }
-      if (nextTick % 5 === 0) {
+      if (hasImu && nextTick % 5 === 0) {
         logEntries.push({
           id: createId("imu"),
           timestamp,
@@ -776,7 +1002,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [IMU] MPU-6050: Accel[X=0.03g, Y=-0.01g, Z=0.99g] Temp: ${curSensors.temperature}°C`,
         });
       }
-      if (nextTick % 6 === 0) {
+      if (hasI2cBus && nextTick % 6 === 0) {
         logEntries.push({
           id: createId("bus"),
           timestamp,
@@ -785,7 +1011,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [BUS] I2C Bus @ 0x3C (OLED) & 0x27 (LCD1602) display update OK`,
         });
       }
-      if (curSensors.gasPpm > 600 && nextTick % 3 === 0) {
+      if (hasGas && curSensors.gasPpm > 600 && nextTick % 3 === 0) {
         logEntries.push({
           id: createId("warn-gas"),
           timestamp,
@@ -794,7 +1020,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [WARN] MQ-2 High gas concentration alert: ${curSensors.gasPpm} PPM!`,
         });
       }
-      if (curSensors.distanceCm < 25 && nextTick % 3 === 0) {
+      if (hasSonar && curSensors.distanceCm < 25 && nextTick % 3 === 0) {
         logEntries.push({
           id: createId("warn-dist"),
           timestamp,
@@ -803,7 +1029,7 @@ export function CircuitStudioCanvas({
           raw: `[${timestamp}] [WARN] HC-SR04 Proximity warning: Target closer than 25cm (${curSensors.distanceCm}cm)!`,
         });
       }
-      if (curBuzzer && nextTick % 3 === 0) {
+      if (hasBuzzer && curBuzzer && nextTick % 3 === 0) {
         logEntries.push({
           id: createId("warn-buzz"),
           timestamp,
@@ -837,53 +1063,80 @@ export function CircuitStudioCanvas({
     return () => clearInterval(timer);
   }, [isSimulating]);
 
-  // Propagate simulation state to nodes
-  useEffect(() => {
-    setNodes((currentNodes) =>
-      currentNodes.map((n) => ({
+  // Derived presentation nodes for React Flow with physics status and interactive handlers
+  const displayNodes = useMemo(() => {
+    return nodes.map((n) => {
+      const status = circuitEvaluation.componentStatuses[n.id];
+      return {
         ...n,
         data: {
           ...n.data,
           isSimulating,
+          multimeterActive,
+          onToggleSwitch: handleToggleSwitch,
+          onUpdateProperty: handleUpdateProperty,
+          onProbePin: handleProbePin,
+          properties: {
+            ...((n.data as any)?.properties || {}),
+            ...(componentProperties[n.id] || {}),
+            isPressed: Boolean(switchStates[n.id]),
+          },
+          simStatus: status,
           simState: {
-            isLedOn: simLedOn,
+            isLedOn: Boolean(status?.actuatorActive && !status?.isBurnedOut),
             servoAngle: simServoAngle,
-            oledMessage: simOledMsg,
-            buzzerActive: simBuzzerActive,
-            relayActive: simRelayActive,
-            motorRunning: isSimulating,
+            oledMessage: status?.operatingState === "displaying" ? simOledMsg : "SSD1306 Disconnected",
+            buzzerActive: Boolean(status?.actuatorActive),
+            relayActive: Boolean(status?.actuatorActive),
+            motorRunning: Boolean(status?.actuatorActive),
             sensorReading: virtualSensors.soilMoisture,
             tick: simTick,
           },
         },
-      }))
-    );
+      };
+    });
   }, [
+    nodes,
+    circuitEvaluation,
     isSimulating,
-    simTick,
-    simLedOn,
+    multimeterActive,
+    handleToggleSwitch,
+    handleUpdateProperty,
+    handleProbePin,
+    componentProperties,
+    switchStates,
     simServoAngle,
     simOledMsg,
-    simBuzzerActive,
-    simRelayActive,
     virtualSensors.soilMoisture,
-    setNodes,
+    simTick,
   ]);
 
-  // Animate wires when simulating
-  useEffect(() => {
-    setEdges((currentEdges) =>
-      currentEdges.map((e) => ({
+  // Derived presentation edges for React Flow with live wire colors and current animations
+  const displayEdges = useMemo(() => {
+    return edges.map((e) => {
+      const net = circuitEvaluation.pinToNet.get(`${e.source}:${e.sourceHandle}`);
+      const isShort = Boolean(net?.isShortCircuit);
+      const isLivePower = Boolean(net && net.voltage >= 2.5);
+      const wireColor = isShort ? "#ef4444" : getWireColor(e.sourceHandle);
+
+      return {
         ...e,
-        animated: isSimulating ? true : e.animated,
+        animated: isSimulating ? (isShort || isLivePower || Boolean(net?.isDriven)) : e.animated,
         style: {
           ...e.style,
-          strokeWidth: isSimulating ? 3 : 2.5,
-          filter: isSimulating ? "drop-shadow(0 0 5px rgba(6,182,212,0.6))" : undefined,
+          stroke: wireColor,
+          strokeWidth: isShort ? 4 : isSimulating && isLivePower ? 3.5 : 2.5,
+          strokeDasharray: isShort ? "5 5" : undefined,
+          filter:
+            isSimulating && isShort
+              ? "drop-shadow(0 0 8px rgba(239,68,68,0.9))"
+              : isSimulating && isLivePower
+              ? "drop-shadow(0 0 6px rgba(245,158,11,0.7))"
+              : undefined,
         },
-      }))
-    );
-  }, [isSimulating, setEdges]);
+      };
+    });
+  }, [edges, circuitEvaluation, isSimulating]);
 
   // On connect
   const onConnect = useCallback(
@@ -980,7 +1233,7 @@ export function CircuitStudioCanvas({
       return;
     }
 
-    if (projectId) {
+    if (projectId && projectId !== "temp-builder") {
       try {
         const res = await fetch(`/api/projects/${projectId}/circuit`, {
           method: "POST",
@@ -993,6 +1246,31 @@ export function CircuitStudioCanvas({
           setSaveStatus("Save failed.");
         }
       } catch (err: any) {
+        setSaveStatus("Error saving.");
+      }
+      setTimeout(() => setSaveStatus(null), 3000);
+    } else {
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: projectName || "Circuit Studio Design",
+            description: "Custom circuit designed in Circuit Studio",
+            board: "ESP32",
+            circuit: { components, connections },
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setSaveStatus("Saved to Workspaces!");
+          if (onSelectProject && data.project?.id) {
+            onSelectProject(data.project.id);
+          }
+        } else {
+          setSaveStatus("Save failed.");
+        }
+      } catch (err) {
         setSaveStatus("Error saving.");
       }
       setTimeout(() => setSaveStatus(null), 3000);
@@ -1028,47 +1306,11 @@ export function CircuitStudioCanvas({
     URL.revokeObjectURL(url);
   };
 
-  // Deterministic Circuit Design Warnings
+  // Deterministic Real Circuit Design Rule Checks (DRC)
+  const designRules: DesignRuleIssue[] = circuitEvaluation.designRules;
   const designWarnings = useMemo(() => {
-    const warnings: string[] = [];
-
-    // Check each node
-    nodes.forEach((node) => {
-      const connectedEdges = edges.filter((e) => e.source === node.id || e.target === node.id);
-      if (connectedEdges.length === 0) {
-        warnings.push(`Component "${node.data.label}" (${node.id}) has no connected pins.`);
-      }
-
-      // Check if sensors/actuators have power & ground connected
-      const pins: any[] = ((node.data as any)?.pins as any[]) || [];
-      const hasVccPin = pins.some((p) => p.type === "power");
-      const hasGndPin = pins.some((p) => p.type === "gnd");
-
-      if (hasVccPin) {
-        const vccConnected = connectedEdges.some(
-          (e) =>
-            (e.source === node.id && pins.find((p) => p.id === e.sourceHandle)?.type === "power") ||
-            (e.target === node.id && pins.find((p) => p.id === e.targetHandle)?.type === "power")
-        );
-        if (!vccConnected) {
-          warnings.push(`Power pin on "${node.data.label}" appears unconnected.`);
-        }
-      }
-
-      if (hasGndPin) {
-        const gndConnected = connectedEdges.some(
-          (e) =>
-            (e.source === node.id && pins.find((p) => p.id === e.sourceHandle)?.type === "gnd") ||
-            (e.target === node.id && pins.find((p) => p.id === e.targetHandle)?.type === "gnd")
-        );
-        if (!gndConnected) {
-          warnings.push(`Ground pin on "${node.data.label}" appears unconnected.`);
-        }
-      }
-    });
-
-    return warnings;
-  }, [nodes, edges]);
+    return designRules.map((r) => r.message);
+  }, [designRules]);
 
   if (!mounted) {
     return (
@@ -1085,31 +1327,30 @@ export function CircuitStudioCanvas({
     <div className="flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden font-sans">
       {/* Studio Toolbar - Switch between Diagram Only minimal bar and Full Studio Toolbar */}
       {diagramOnly ? (
-        <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white/95 px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/95 backdrop-blur shrink-0 z-10">
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <div className="flex items-center gap-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100 truncate">
-              <Cpu className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-              <span className="truncate max-w-[130px] sm:max-w-xs">{projectName}</span>
+        <div className="flex h-11 items-center justify-between border-b border-zinc-200 bg-white/95 px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/95 backdrop-blur shrink-0 z-10 gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
+            <div className="flex items-center gap-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100 truncate min-w-0 shrink">
+              <Cpu className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+              <span className="truncate max-w-[120px] sm:max-w-[180px] whitespace-nowrap" title={projectName}>{projectName}</span>
             </div>
-            <span className="hidden md:inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-mono text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-              {nodes.length} Components • {edges.length} Wires
+            <span className="hidden xl:inline-flex items-center gap-1 font-mono text-[11px] text-zinc-400 dark:text-zinc-500 whitespace-nowrap shrink-0">
+              {nodes.length} parts · {edges.length} wires
             </span>
             {isSimulating && (
-              <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 sm:px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                <span className="hidden sm:inline">Signals Flowing</span>
-                <span className="sm:hidden">Sim Active</span>
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-500/20 dark:text-emerald-300 shrink-0 whitespace-nowrap">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Signals Flowing
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Undo / Redo */}
-            <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-0.5 shadow-2xs">
+            <div className="flex items-center rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 p-0.5 shrink-0">
               <button
                 onClick={handleUndo}
                 disabled={!canUndo}
-                className="rounded p-1 text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                className="p-1 rounded text-zinc-600 hover:bg-white hover:text-zinc-900 disabled:opacity-25 disabled:cursor-not-allowed dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 transition-colors"
                 title="Undo circuit change (Ctrl+Z)"
                 aria-label="Undo"
               >
@@ -1118,7 +1359,7 @@ export function CircuitStudioCanvas({
               <button
                 onClick={handleRedo}
                 disabled={!canRedo}
-                className="rounded p-1 text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                className="p-1 rounded text-zinc-600 hover:bg-white hover:text-zinc-900 disabled:opacity-25 disabled:cursor-not-allowed dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 transition-colors"
                 title="Redo circuit change (Ctrl+Y)"
                 aria-label="Redo"
               >
@@ -1129,10 +1370,10 @@ export function CircuitStudioCanvas({
             {allowSimulation && (
               <button
                 onClick={() => setIsSimulating(!isSimulating)}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-xs transition-all ${
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold shadow-xs transition-all shrink-0 whitespace-nowrap ${
                   isSimulating
-                    ? "bg-amber-500 hover:bg-amber-400 text-white ring-1 ring-amber-300/40"
-                    : "bg-emerald-600 hover:bg-emerald-500 text-white ring-1 ring-emerald-400/40 hover:scale-[1.02]"
+                    ? "bg-amber-500 hover:bg-amber-400 text-white"
+                    : "bg-emerald-600 hover:bg-emerald-500 text-white"
                 }`}
                 title={isSimulating ? "Pause circuit simulation" : "Run interactive live simulation"}
               >
@@ -1152,185 +1393,287 @@ export function CircuitStudioCanvas({
 
             <button
               onClick={handleAutoLayout}
-              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors shadow-2xs"
+              className="flex items-center gap-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors shrink-0 whitespace-nowrap"
               title="Auto-organize components to avoid overlapping"
             >
-              <Sparkles className="h-3 w-3 text-amber-500" />
-              <span className="hidden sm:inline">Auto Layout</span>
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              <span className="hidden md:inline">Layout</span>
             </button>
 
             <button
               onClick={handleFitView}
-              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors shadow-2xs"
+              className="p-1.5 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors shrink-0"
               title="Fit diagram to canvas"
             >
-              <Maximize2 className="h-3 w-3 text-zinc-500" />
-              <span className="hidden sm:inline">Fit</span>
+              <Maximize2 className="h-3.5 w-3.5" />
             </button>
 
             <button
               onClick={() => setShowLegend(!showLegend)}
-              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors shadow-2xs ${
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 whitespace-nowrap ${
                 showLegend
                   ? "border-sky-400 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
-                  : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-300"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300"
               }`}
               title="Show wire color & pin semantics legend"
             >
-              <Info className="h-3 w-3 text-sky-500" />
-              <span className="hidden sm:inline">Legend</span>
+              <Info className="h-3.5 w-3.5 text-sky-500" />
+              <span className="hidden lg:inline">Legend</span>
             </button>
 
             {onOpenStudio && (
               <button
                 onClick={onOpenStudio}
-                className="flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/50 dark:hover:bg-sky-900/50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300 transition-colors shadow-2xs"
-                title="Open in full Circuit Studio to edit, add parts, and monitor serial"
+                className="flex items-center gap-1 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white px-2.5 py-1 text-xs font-semibold transition-all shadow-xs shrink-0 whitespace-nowrap"
+                title="Open in full Circuit Studio to edit and simulate"
               >
-                <ExternalLink className="h-3 w-3" />
-                <span className="hidden sm:inline">Full Studio</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Studio</span>
               </button>
             )}
           </div>
         </div>
       ) : (
         /* Full Studio Toolbar */
-        <div className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-zinc-900 dark:text-zinc-100" />
-              <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                {projectName}
-              </span>
-            </div>
-            <span className="text-zinc-300 dark:text-zinc-700">|</span>
-            <span className="font-mono text-[11px] text-zinc-500">
-              {nodes.length} Components • {edges.length} Wires
+        <div className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900 shrink-0 gap-2 min-w-0">
+          {/* Left: Sidebar toggle, Workspace / Title, Net Stats, Warnings */}
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
+            {!diagramOnly && (
+              <button
+                onClick={() => setIsSidebarOpen((prev) => !prev)}
+                className={`p-1.5 rounded-md text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0 ${
+                  !isSidebarOpen ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100" : ""
+                }`}
+                title={isSidebarOpen ? "Collapse sidebar drawer" : "Expand sidebar drawer"}
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
+            )}
+
+            {projects && onSelectProject ? (
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Cpu className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
+                <select
+                  value={projectId}
+                  onChange={(e) => onSelectProject(e.target.value)}
+                  className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-1 focus:ring-cyan-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100 max-w-[130px] sm:max-w-[200px] truncate"
+                  title="Switch workspace"
+                >
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title} {p.board ? `(${p.board})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Cpu className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
+                <span
+                  className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate max-w-[120px] sm:max-w-[180px] whitespace-nowrap"
+                  title={projectName}
+                >
+                  {projectName}
+                </span>
+              </div>
+            )}
+
+            <span className="hidden xl:inline text-zinc-300 dark:text-zinc-700">|</span>
+            <span className="hidden xl:inline font-mono text-[11px] text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
+              {nodes.length} parts · {edges.length} wires
             </span>
 
-            {/* Undo / Redo Buttons */}
-            <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+            {/* Undo / Redo */}
+            <div className="flex items-center rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 p-0.5 shrink-0">
               <button
                 onClick={handleUndo}
                 disabled={!canUndo}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-white hover:shadow-xs disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
-                title="Undo circuit change (Ctrl+Z)"
+                className="p-1 rounded text-zinc-600 hover:bg-white hover:text-zinc-900 disabled:opacity-25 disabled:cursor-not-allowed dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 transition-colors"
+                title="Undo (Ctrl+Z)"
               >
                 <Undo2 className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">Undo</span>
               </button>
               <button
                 onClick={handleRedo}
                 disabled={!canRedo}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-white hover:shadow-xs disabled:opacity-30 disabled:cursor-not-allowed dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
-                title="Redo circuit change (Ctrl+Y)"
+                className="p-1 rounded text-zinc-600 hover:bg-white hover:text-zinc-900 disabled:opacity-25 disabled:cursor-not-allowed dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 transition-colors"
+                title="Redo (Ctrl+Y)"
               >
                 <Redo2 className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">Redo</span>
               </button>
             </div>
 
+            {/* Warnings Pill */}
             {designWarnings.length > 0 && (
-              <span
-                onClick={() => setActiveTab("warnings")}
-                className="cursor-pointer flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+              <button
+                onClick={() => {
+                  setIsSidebarOpen(true);
+                  setActiveTab("warnings");
+                }}
+                className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-500/20 hover:bg-amber-500/20 dark:text-amber-300 transition-colors shrink-0 whitespace-nowrap"
+                title="View design rule check warnings"
               >
-                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                <span>{designWarnings.length} Warnings</span>
+                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                <span>{designWarnings.length}</span>
+              </button>
+            )}
+
+            {/* Rails Live Badge */}
+            {isSimulating && (
+              <span className="hidden lg:inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-500/20 dark:text-emerald-300 shrink-0 whitespace-nowrap">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Rails Live
               </span>
             )}
           </div>
 
-          {/* Toolbar Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Simulation Toggle */}
+          {/* Right: Simulation, Diagnostic tools, Delete, Export Dropdown, Save */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Simulation Controls */}
             {!isSimulating ? (
               <button
                 onClick={() => {
                   setIsSimulating(true);
                   setIsTerminalOpen(true);
                 }}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-500 transition-all ring-1 ring-emerald-400/40 hover:scale-[1.02]"
-                title="Run interactive hardware simulation with real-time animations"
+                className="flex items-center gap-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition-all shrink-0 whitespace-nowrap"
+                title="Run interactive hardware simulation"
               >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                </span>
-                <Play className="h-3.5 w-3.5 fill-current" />
-                <span>Run Simulation</span>
+                <Play className="h-3 w-3 fill-current" />
+                <span>Simulate</span>
               </button>
             ) : (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => setIsSimulating(false)}
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all ring-1 ring-amber-300/40"
+                  className="flex items-center gap-1 rounded-md bg-amber-500 hover:bg-amber-400 px-2 py-1 text-xs font-semibold text-white shadow-xs transition-all whitespace-nowrap"
                   title="Pause circuit simulation"
                 >
-                  <Pause className="h-3.5 w-3.5 fill-current" />
-                  <span>Pause</span>
+                  <Pause className="h-3 w-3 fill-current" />
+                  <span className="hidden sm:inline">Pause</span>
                 </button>
                 <button
                   onClick={() => {
                     setIsSimulating(false);
                     setSimTick(0);
                   }}
-                  className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
+                  className="flex items-center gap-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors whitespace-nowrap"
                   title="Reset simulation"
                 >
                   <Square className="h-3 w-3 fill-current text-zinc-500" />
-                  <span>Reset</span>
+                  <span className="hidden sm:inline">Reset</span>
                 </button>
-                <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  5V / 3.3V Rails Active
-                </span>
               </div>
             )}
 
+            {/* Multimeter */}
             <button
-              onClick={() => setIsTerminalOpen(!isTerminalOpen)}
-              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                isTerminalOpen
-                  ? "border-sky-500 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              onClick={() => setMultimeterActive(!multimeterActive)}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 whitespace-nowrap ${
+                multimeterActive
+                  ? "border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 font-semibold ring-1 ring-amber-500"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300"
               }`}
-              title="Toggle Serial Monitor Terminal"
+              title="Toggle Virtual Multimeter / Logic Probe"
             >
-              <Terminal className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-              <span className="hidden md:inline">Serial Monitor</span>
+              <Gauge className="h-3.5 w-3.5 text-amber-500" />
+              <span className="hidden md:inline">Meter</span>
             </button>
 
+            {/* Serial Monitor */}
+            <button
+              onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 whitespace-nowrap ${
+                isTerminalOpen
+                  ? "border-sky-500 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 font-semibold"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300"
+              }`}
+              title="Toggle Serial Monitor & Telemetry Drawer"
+            >
+              <Terminal className="h-3.5 w-3.5 text-sky-500" />
+              <span className="hidden md:inline">Serial</span>
+            </button>
+
+            {/* Delete Selected */}
             {(selectedNode || selectedEdge) && (
               <button
                 onClick={handleDeleteSelected}
-                className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
-                title="Delete selected item"
+                className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 px-2 py-1 text-xs font-medium transition-colors shrink-0 whitespace-nowrap"
+                title="Delete selected item (Delete key)"
               >
-                <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                <span>Delete</span>
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Delete</span>
               </button>
             )}
 
-            <button
-              onClick={handleExportJson}
-              className="flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
-              title="Export circuit data as JSON"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>Export JSON</span>
-            </button>
+            {/* Consolidated Export Dropdown */}
+            <div className="relative shrink-0" ref={exportMenuRef}>
+              <button
+                onClick={() => setIsExportOpen((prev) => !prev)}
+                className="flex items-center gap-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors whitespace-nowrap"
+                title="Export circuit schematics and BOM"
+              >
+                <Download className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="hidden sm:inline">Export</span>
+                <ChevronDown className={`h-3 w-3 text-zinc-400 transition-transform ${isExportOpen ? "rotate-180" : ""}`} />
+              </button>
 
+              {isExportOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-48 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900 z-50 animate-in fade-in slide-in-from-top-1">
+                  <button
+                    onClick={() => {
+                      handleExportKiCad();
+                      setIsExportOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition-colors"
+                  >
+                    <FileCode className="h-4 w-4 text-emerald-500" />
+                    <div>
+                      <div className="font-medium">KiCad Netlist</div>
+                      <div className="text-[10px] text-zinc-400">PCB layout (.net)</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportBom();
+                      setIsExportOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition-colors"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-sky-500" />
+                    <div>
+                      <div className="font-medium">Bill of Materials</div>
+                      <div className="text-[10px] text-zinc-400">Part list (.csv)</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportJson();
+                      setIsExportOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition-colors"
+                  >
+                    <Download className="h-4 w-4 text-amber-500" />
+                    <div>
+                      <div className="font-medium">Circuit JSON</div>
+                      <div className="text-[10px] text-zinc-400">Raw data (.json)</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Save Button */}
             <button
               onClick={handleSave}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-all shadow-xs ${
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all shadow-xs shrink-0 whitespace-nowrap ${
                 saveStatus
-                  ? "bg-emerald-600 text-white ring-1 ring-emerald-400"
+                  ? "bg-emerald-600 text-white"
                   : "bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
               }`}
             >
               <Save className="h-3.5 w-3.5" />
-              <span>{saveStatus || "Save Circuit"}</span>
+              <span>{saveStatus || "Save"}</span>
             </button>
           </div>
         </div>
@@ -1338,9 +1681,9 @@ export function CircuitStudioCanvas({
 
       {/* Main Studio Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Drawer / Canvas Sidebar - Hidden in Diagram Only mode */}
-        {!diagramOnly && (
-          <div className="w-64 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 flex flex-col shrink-0">
+        {/* Left Drawer / Canvas Sidebar - Hidden in Diagram Only mode or when collapsed */}
+        {!diagramOnly && isSidebarOpen && (
+          <div className="w-68 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 flex flex-col shrink-0">
           {/* Tabs */}
           <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs">
             <button
@@ -1351,7 +1694,7 @@ export function CircuitStudioCanvas({
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
-              Components
+              Parts
             </button>
             <button
               onClick={() => setActiveTab("inspector")}
@@ -1361,7 +1704,7 @@ export function CircuitStudioCanvas({
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
-              Inspector
+              Inspect
             </button>
             <button
               onClick={() => setActiveTab("warnings")}
@@ -1371,12 +1714,26 @@ export function CircuitStudioCanvas({
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
               }`}
             >
-              <span>Warnings</span>
-              {designWarnings.length > 0 && (
-                <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-700 px-1.5 py-0.2 text-[10px] font-bold">
-                  {designWarnings.length}
+              <span>DRC</span>
+              {designRules.length > 0 && (
+                <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
+                  designRules.some(r => r.severity === "critical")
+                    ? "bg-red-100 text-red-800 border border-red-300 dark:bg-red-950/60 dark:text-red-300"
+                    : "bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300"
+                }`}>
+                  {designRules.length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab("bom")}
+              className={`flex-1 py-2 font-medium border-b-2 text-center transition-colors ${
+                activeTab === "bom"
+                  ? "border-zinc-900 text-zinc-900 font-semibold dark:border-zinc-100 dark:text-zinc-100"
+                  : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+              }`}
+            >
+              BOM
             </button>
           </div>
 
@@ -1628,28 +1985,113 @@ export function CircuitStudioCanvas({
             </div>
           )}
 
-          {/* Tab 3: Design Warnings */}
+          {/* Tab 3: Design Rules & Electrical Checks (DRC) */}
           {activeTab === "warnings" && (
-            <div className="flex-1 overflow-y-auto p-3 text-xs space-y-2">
-              {designWarnings.length === 0 ? (
+            <div className="flex-1 overflow-y-auto p-3 text-xs space-y-2.5">
+              <div className="flex items-center justify-between pb-1 border-b border-zinc-200 dark:border-zinc-800">
+                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400">
+                  Design Rule Check (DRC)
+                </span>
+                <span className="font-mono text-[10px] text-zinc-500">
+                  {designRules.length} {designRules.length === 1 ? "rule flagged" : "rules flagged"}
+                </span>
+              </div>
+
+              {designRules.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-8 w-8 mb-2" />
-                  <p className="font-medium">No Design Issues Detected</p>
+                  <p className="font-medium">All Design Rules Passed</p>
                   <p className="text-[11px] text-zinc-400 mt-1">
-                    All components have valid connections.
+                    No short-circuits, overcurrent, or voltage violations detected.
                   </p>
                 </div>
               ) : (
-                designWarnings.map((warn, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
-                    <span className="text-[11px] leading-relaxed">{warn}</span>
-                  </div>
-                ))
+                designRules.map((rule) => {
+                  const isCritical = rule.severity === "critical";
+                  const isWarning = rule.severity === "warning";
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`rounded-lg border p-2.5 space-y-1.5 transition-all ${
+                        isCritical
+                          ? "border-red-300 bg-red-50/70 text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 shadow-2xs"
+                          : isWarning
+                          ? "border-amber-300 bg-amber-50/70 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200 shadow-2xs"
+                          : "border-sky-300 bg-sky-50/70 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase tracking-wider ${
+                            isCritical
+                              ? "bg-red-600 text-white"
+                              : isWarning
+                              ? "bg-amber-600 text-white"
+                              : "bg-sky-600 text-white"
+                          }`}
+                        >
+                          {rule.severity}
+                        </span>
+                        <span className="font-semibold text-xs truncate flex-1 ml-1">{rule.title}</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed opacity-90">{rule.message}</p>
+                      {rule.fixRecommendation && (
+                        <div className="pt-1 mt-1 border-t border-black/10 dark:border-white/10 text-[10px] flex items-start gap-1 font-mono">
+                          <Wrench className="h-3 w-3 shrink-0 mt-0.5 text-zinc-500" />
+                          <span>Fix: {rule.fixRecommendation}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
+            </div>
+          )}
+
+          {/* Tab 4: Bill of Materials (BOM) */}
+          {activeTab === "bom" && (
+            <div className="flex-1 overflow-y-auto p-3 text-xs flex flex-col">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
+                <span className="font-mono text-[10px] uppercase font-bold text-zinc-400">
+                  Bill of Materials (BOM)
+                </span>
+                <button
+                  onClick={handleExportBom}
+                  className="flex items-center gap-1 rounded bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2 py-0.5 text-[10px] font-mono font-semibold text-zinc-700 dark:text-zinc-300"
+                  title="Download BOM as CSV"
+                >
+                  <Download className="h-3 w-3" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+
+              <div className="mt-2 space-y-2 flex-1 overflow-y-auto">
+                {generateBillOfMaterials(circuitComponents).map((item) => (
+                  <div
+                    key={item.refDes}
+                    className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 space-y-1"
+                  >
+                    <div className="flex items-center justify-between font-mono">
+                      <span className="font-bold text-cyan-600 dark:text-cyan-400 text-xs">
+                        {item.refDes}
+                      </span>
+                      <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        {item.estimatedCost}
+                      </span>
+                    </div>
+                    <div className="font-medium text-zinc-900 dark:text-zinc-100 text-xs">
+                      {item.name}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 font-mono leading-tight">
+                      {item.specs}
+                    </div>
+                    <div className="text-[9px] text-zinc-400 font-mono flex items-center justify-between pt-0.5">
+                      <span>Pkg: {item.footprint}</span>
+                      <span>Qty: {item.quantity}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1657,9 +2099,76 @@ export function CircuitStudioCanvas({
 
         {/* Center: The React Flow Canvas */}
         <div className="flex-1 h-full w-full relative">
+          {/* Floating Digital Multimeter (DMM) HUD */}
+          {multimeterActive && (
+            <div className="absolute top-4 right-4 z-30 w-84 rounded-xl border border-amber-500/80 bg-zinc-950/95 p-3.5 text-zinc-100 shadow-2xl backdrop-blur animate-in fade-in zoom-in-95 font-mono">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+                <span className="flex items-center gap-1.5 font-bold text-amber-400 text-xs tracking-wider">
+                  <Gauge className="h-4 w-4" />
+                  DIGITAL MULTIMETER (DMM)
+                </span>
+                <button
+                  onClick={() => setMultimeterActive(false)}
+                  className="rounded p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                  title="Close Multimeter HUD"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* 7-Segment style LCD Readout */}
+              <div className="my-2.5 rounded-lg border border-zinc-800 bg-black/80 p-2.5 shadow-inner">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">DC VOLTAGE</span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                      probedMeasurement?.logicState === "POWER"
+                        ? "bg-rose-950 text-rose-400 border border-rose-800"
+                        : probedMeasurement?.logicState === "GND"
+                        ? "bg-zinc-800 text-zinc-300"
+                        : probedMeasurement?.logicState === "HIGH"
+                        ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                        : "bg-zinc-900 text-zinc-500"
+                    }`}
+                  >
+                    {probedMeasurement?.logicState || "READY"}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between">
+                  <div className="font-mono text-3xl font-extrabold tracking-wider text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">
+                    {probedMeasurement ? probedMeasurement.voltageDisplay : "0.00 V"}
+                  </div>
+                  <div className="text-right text-[11px] font-semibold text-amber-300">
+                    {probedMeasurement ? `${probedMeasurement.currentMa.toFixed(1)} mA` : "0.0 mA"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Probe Lead Point Info */}
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Probed Target:</span>
+                  <span className="font-bold text-zinc-200 truncate max-w-[170px]" title={probedMeasurement?.label || ""}>
+                    {probedMeasurement?.label || "None (Click pin on canvas)"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Electrical Net:</span>
+                  <span className="text-cyan-400 truncate max-w-[170px]">
+                    {probedMeasurement?.netName || "--"}
+                  </span>
+                </div>
+              </div>
+
+              <p className="mt-2 text-[10px] text-zinc-500 border-t border-zinc-800/80 pt-1.5">
+                Tip: Click any pin handle or component pin on the canvas to probe live voltage & signal.
+              </p>
+            </div>
+          )}
+
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
+            nodes={displayNodes}
+            edges={displayEdges}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}

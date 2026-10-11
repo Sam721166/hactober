@@ -46,6 +46,7 @@ export interface SeedProject {
     language: string;
     content: string;
   };
+  firmwares?: Array<{ id?: string; filename: string; language?: string; content: string; extractedPins?: any[] }>;
   bom: Array<{ ref: string; name: string; quantity: number; unitPriceInr?: number; notes?: string }>;
 }
 

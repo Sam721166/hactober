@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   FileCode,
   Play,
@@ -46,6 +46,11 @@ import {
   CornerDownRight,
   ShieldCheck,
   HardDrive,
+  Usb,
+  LineChart,
+  BookOpen,
+  Bot,
+  Wrench,
 } from "lucide-react";
 import {
   analyzeFirmware,
@@ -57,12 +62,130 @@ import {
 } from "@/lib/analysis/firmware";
 import { tokenizeLine, getTokenClass } from "./FirmwareSyntax";
 
+function validateArduinoSyntax(code: string, fileName: string): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const lines = code.split("\n");
+
+  // 1. Check setup and loop for .ino sketches
+  if (fileName.endsWith(".ino")) {
+    const hasSetup = /\bvoid\s+setup\s*\(\s*\)/.test(code);
+    const hasLoop = /\bvoid\s+loop\s*\(\s*\)/.test(code);
+    if (!hasSetup) {
+      errors.push(`${fileName}:1:1: error: sketch is missing 'void setup()' initialization function`);
+    }
+    if (!hasLoop) {
+      errors.push(`${fileName}:1:1: error: sketch is missing 'void loop()' execution loop`);
+    }
+  }
+
+  // 2. Bracket, Parenthesis & Brace Balance tracking with line numbers
+  const stack: { char: string; line: number; col: number }[] = [];
+  let inBlockComment = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+    let inString = false;
+    let inChar = false;
+
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j];
+      const next = line[j + 1];
+
+      // Handle comments
+      if (!inString && !inChar) {
+        if (!inBlockComment && ch === "/" && next === "*") {
+          inBlockComment = true;
+          j++;
+          continue;
+        }
+        if (inBlockComment && ch === "*" && next === "/") {
+          inBlockComment = false;
+          j++;
+          continue;
+        }
+        if (inBlockComment) continue;
+        if (ch === "/" && next === "/") {
+          break; // Rest of line is comment
+        }
+      }
+
+      if (inBlockComment) continue;
+
+      // String literals
+      if (ch === '"' && line[j - 1] !== "\\") {
+        inString = !inString;
+        continue;
+      }
+      if (ch === "'" && line[j - 1] !== "\\") {
+        inChar = !inChar;
+        continue;
+      }
+      if (inString || inChar) continue;
+
+      // Bracket matching
+      if (ch === "{" || ch === "(" || ch === "[") {
+        stack.push({ char: ch, line: lineNum, col: j + 1 });
+      } else if (ch === "}" || ch === ")" || ch === "]") {
+        const top = stack.pop();
+        if (!top) {
+          errors.push(`${fileName}:${lineNum}:${j + 1}: error: unmatched closing '${ch}'`);
+        } else {
+          const match =
+            (top.char === "{" && ch === "}") ||
+            (top.char === "(" && ch === ")") ||
+            (top.char === "[" && ch === "]");
+          if (!match) {
+            errors.push(`${fileName}:${lineNum}:${j + 1}: error: mismatched '${ch}', expected closing for '${top.char}' opened at line ${top.line}:${top.col}`);
+          }
+        }
+      }
+    }
+
+    if (inString) {
+      errors.push(`${fileName}:${lineNum}:${line.length}: error: unclosed string literal`);
+    }
+
+    // 3. Semicolon check on simple statement calls
+    const trimmed = line.trim();
+    if (
+      !inBlockComment &&
+      !trimmed.startsWith("//") &&
+      !trimmed.startsWith("#") &&
+      !trimmed.endsWith("{") &&
+      !trimmed.endsWith("}") &&
+      !trimmed.endsWith(":") &&
+      !trimmed.endsWith(";") &&
+      trimmed.length > 0
+    ) {
+      if (
+        /^(?:digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|Serial\.[a-zA-Z]+|strip\.[a-zA-Z]+|servo\.[a-zA-Z]+)\s*\(.*\)$/.test(trimmed) ||
+        /^(?:int|float|double|char|bool|uint8_t|uint16_t|uint32_t|unsigned long)\s+[a-zA-Z0-9_]+\s*=.+[^;{]$/.test(trimmed)
+      ) {
+        errors.push(`${fileName}:${lineNum}:${line.length + 1}: error: expected ';' before end of line`);
+      }
+    }
+  }
+
+  if (inBlockComment) {
+    errors.push(`${fileName}:${lines.length}:1: error: unclosed block comment '/*'`);
+  }
+
+  while (stack.length > 0) {
+    const unclosed = stack.pop()!;
+    errors.push(`${fileName}:${unclosed.line}:${unclosed.col}: error: unclosed '${unclosed.char}'`);
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
 interface FirmwareIDEProps {
-  projectId: string;
+  projectId?: string;
   projectName?: string;
-  initialCode: string;
+  initialCode?: string;
+  initialFiles?: { name: string; content: string; isModified?: boolean }[];
   circuitConnections?: any[];
-  onSave: (filename: string, code: string) => Promise<boolean | void>;
+  onSave?: (filename: string, code: string) => Promise<boolean | void>;
   onSwitchToCircuitTab?: () => void;
   className?: string;
 }
@@ -319,22 +442,124 @@ void loop() {
   },
 ];
 
+export const EMBEDDED_LIBRARIES = [
+  {
+    name: "DHT sensor library",
+    header: "DHT.h",
+    author: "Adafruit",
+    description: "Driver for DHT11, DHT22 and AM2302 digital relative humidity & temperature sensors.",
+    category: "Sensors",
+    platformio: "adafruit/DHT sensor library@^1.4.6",
+    boilerplate: `#include <DHT.h>\n#define DHTPIN 4\n#define DHTTYPE DHT22\nDHT dht(DHTPIN, DHTTYPE);`,
+  },
+  {
+    name: "Adafruit SSD1306",
+    header: "Adafruit_SSD1306.h",
+    author: "Adafruit",
+    description: "Driver for monochrome 128x64 and 128x32 OLED displays using I2C.",
+    category: "Displays",
+    platformio: "adafruit/Adafruit SSD1306@^2.5.9",
+    boilerplate: `#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 display(128, 64, &Wire, -1);`,
+  },
+  {
+    name: "Adafruit NeoPixel",
+    header: "Adafruit_NeoPixel.h",
+    author: "Adafruit",
+    description: "Addressable RGB and RGBW LED strips and pixels (WS2812B, SK6812).",
+    category: "Actuators",
+    platformio: "adafruit/Adafruit NeoPixel@^1.12.0",
+    boilerplate: `#include <Adafruit_NeoPixel.h>\n#define LED_PIN 5\n#define NUM_PIXELS 8\nAdafruit_NeoPixel pixels(NUM_PIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);`,
+  },
+  {
+    name: "LiquidCrystal_I2C",
+    header: "LiquidCrystal_I2C.h",
+    author: "Frank de Brabander",
+    description: "Driver for standard 16x2 and 20x4 character LCDs with PCF8574 I2C adapter backpack.",
+    category: "Displays",
+    platformio: "marcoschwartz/LiquidCrystal_I2C@^1.1.4",
+    boilerplate: `#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\nLiquidCrystal_I2C lcd(0x27, 16, 2);`,
+  },
+  {
+    name: "Wire (I2C Master)",
+    header: "Wire.h",
+    author: "Arduino Core",
+    description: "Standard Two-Wire Interface (I2C) communication library.",
+    category: "Core Protocols",
+    platformio: "",
+    boilerplate: `#include <Wire.h>`,
+  },
+  {
+    name: "SPI Bus",
+    header: "SPI.h",
+    author: "Arduino Core",
+    description: "High-speed Serial Peripheral Interface bus driver.",
+    category: "Core Protocols",
+    platformio: "",
+    boilerplate: `#include <SPI.h>`,
+  },
+  {
+    name: "WiFi Core",
+    header: "WiFi.h",
+    author: "Espressif",
+    description: "WiFi station, Access Point, and TCP/UDP socket driver for ESP32 and ESP8266.",
+    category: "Networking",
+    platformio: "",
+    boilerplate: `#include <WiFi.h>`,
+  },
+  {
+    name: "PubSubClient (MQTT)",
+    header: "PubSubClient.h",
+    author: "Nick O'Leary",
+    description: "Lightweight client for publishing and subscribing to MQTT IoT brokers.",
+    category: "IoT",
+    platformio: "knolleary/PubSubClient@^2.8",
+    boilerplate: `#include <PubSubClient.h>\nWiFiClient espClient;\nPubSubClient client(espClient);`,
+  },
+  {
+    name: "Servo (PWM)",
+    header: "Servo.h",
+    author: "Arduino Core",
+    description: "Control RC standard position and continuous rotation servo motors via PWM.",
+    category: "Actuators",
+    platformio: "arduino-libraries/Servo@^1.2.1",
+    boilerplate: `#include <Servo.h>\nServo myServo;`,
+  },
+  {
+    name: "ArduinoJson",
+    header: "ArduinoJson.h",
+    author: "Benoît Blanchon",
+    description: "Fast C++ JSON serialization and deserialization for embedded MCUs.",
+    category: "Data",
+    platformio: "bblanchon/ArduinoJson@^7.0.4",
+    boilerplate: `#include <ArduinoJson.h>\nStaticJsonDocument<256> doc;`,
+  },
+];
+
 export function FirmwareIDE({
   projectId,
   projectName = "Embedded Project",
   initialCode,
+  initialFiles,
   circuitConnections = [],
   onSave,
   onSwitchToCircuitTab,
   className = "",
 }: FirmwareIDEProps) {
   // File System State
-  const [files, setFiles] = useState<IDEFile[]>([
-    {
-      name: "main.ino",
-      content:
-        initialCode ||
-        `// CircuitDoctor Firmware Project
+  const [files, setFiles] = useState<IDEFile[]>(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      return initialFiles.map((f) => ({
+        name: f.name,
+        content: f.content,
+        isModified: false,
+      }));
+    }
+    return [
+      {
+        name: "main.ino",
+        content:
+          initialCode ||
+          `// CircuitDoctor Firmware Project
 void setup() {
   Serial.begin(115200);
   pinMode(13, OUTPUT);
@@ -347,16 +572,16 @@ void loop() {
   delay(500);
 }
 `,
-      isModified: false,
-    },
-    {
-      name: "config.h",
-      content: generatePinHeader(circuitConnections),
-      isModified: false,
-    },
-    {
-      name: "secrets.h",
-      content: `// Hardware credentials & network configuration
+        isModified: false,
+      },
+      {
+        name: "config.h",
+        content: generatePinHeader(circuitConnections),
+        isModified: false,
+      },
+      {
+        name: "secrets.h",
+        content: `// Hardware credentials & network configuration
 #ifndef SECRETS_H
 #define SECRETS_H
 
@@ -366,18 +591,19 @@ void loop() {
 
 #endif
 `,
-      isModified: false,
-    },
-  ]);
+        isModified: false,
+      },
+    ];
+  });
 
   const [activeFileName, setActiveFileName] = useState<string>("main.ino");
   const [selectedBoardId, setSelectedBoardId] = useState<string>("esp32");
 
   // IDE Controls & State
   const [isSaving, setIsSaving] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<"diagnostics" | "pins" | "platformio">("diagnostics");
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<"diagnostics" | "pins" | "platformio" | "ai" | "libraries">("diagnostics");
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [fontSize, setFontSize] = useState<number>(13);
@@ -394,13 +620,33 @@ void loop() {
 
   // Bottom Console / Terminal Panel State
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
-  const [consoleTab, setConsoleTab] = useState<"build" | "serial" | "problems">("build");
+  const [consoleTab, setConsoleTab] = useState<"build" | "serial" | "plotter" | "problems">("build");
   const [isCompiling, setIsCompiling] = useState(false);
   const [compileStatus, setCompileStatus] = useState<"idle" | "success" | "error">("idle");
   const [buildLogs, setBuildLogs] = useState<string[]>([
     "CircuitDoctor Firmware Toolchain v2.4.0 initialized.",
     "Ready to compile or run static analysis.",
   ]);
+
+  // AI Copilot State
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiCustomPrompt, setAiCustomPrompt] = useState("");
+
+  // Web Serial API (real physical board over USB)
+  const [webSerialPort, setWebSerialPort] = useState<any | null>(null);
+  const [isWebSerialConnected, setIsWebSerialConnected] = useState(false);
+  const [isWebSerialConnecting, setIsWebSerialConnecting] = useState(false);
+  const serialReaderRef = useRef<any>(null);
+
+  // Live Serial Plotter State
+  const [plotterData, setPlotterData] = useState<{ time: number; values: number[] }[]>([]);
+  const [isPlotterPaused, setIsPlotterPaused] = useState(false);
+  const [isSimulatingTelemetry, setIsSimulatingTelemetry] = useState(false);
+  const plotterCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Library Manager Search State
+  const [librarySearch, setLibrarySearch] = useState("");
 
   // Serial Monitor Simulation State
   const [serialBaud, setSerialBaud] = useState<number>(115200);
@@ -424,7 +670,9 @@ void loop() {
   const [autoScrollSerial, setAutoScrollSerial] = useState(true);
 
   // UI Dropdowns
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showSnippetsMenu, setShowSnippetsMenu] = useState(false);
+  const [snippetFilter, setSnippetFilter] = useState("");
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileNameInput, setNewFileNameInput] = useState("");
@@ -454,17 +702,48 @@ void loop() {
     return analyzeFirmware(mainFile.content);
   }, [mainFile.content]);
 
-  // Sync initialCode prop updates if received from parent
+  // Sync initialFiles or initialCode prop updates if received from parent
   useEffect(() => {
-    if (initialCode && files[0]?.name === "main.ino" && !files[0]?.content.trim()) {
-      const timer = setTimeout(() => {
-        setFiles((prev) =>
-          prev.map((f) => (f.name === "main.ino" ? { ...f, content: initialCode, isModified: false } : f))
-        );
-      }, 0);
-      return () => clearTimeout(timer);
+    if (initialFiles && initialFiles.length > 0) {
+      setFiles((prev) => {
+        const merged = initialFiles.map((initF) => {
+          const existing = prev.find((p) => p.name === initF.name);
+          return existing && existing.isModified ? existing : { name: initF.name, content: initF.content, isModified: false };
+        });
+        for (const f of prev) {
+          if (!merged.some((m) => m.name === f.name)) {
+            merged.push(f);
+          }
+        }
+        return merged;
+      });
+    } else if (initialCode && files[0]?.name === "main.ino" && !files[0]?.content.trim()) {
+      setFiles((prev) =>
+        prev.map((f) => (f.name === "main.ino" ? { ...f, content: initialCode, isModified: false } : f))
+      );
     }
-  }, [initialCode, files]);
+  }, [initialFiles, initialCode]);
+
+  // Synchronize gutter line heights when wordWrap causes lines to wrap
+  useEffect(() => {
+    if (!gutterRef.current) return;
+    const gutterChildren = gutterRef.current.children;
+    if (!wordWrap) {
+      for (let i = 0; i < gutterChildren.length; i++) {
+        (gutterChildren[i] as HTMLElement).style.height = "22px";
+      }
+      return;
+    }
+    if (codeBackdropRef.current) {
+      const backdropChildren = codeBackdropRef.current.children;
+      for (let i = 0; i < Math.min(backdropChildren.length, gutterChildren.length); i++) {
+        const h = (backdropChildren[i] as HTMLElement).offsetHeight;
+        if (h > 0) {
+          (gutterChildren[i] as HTMLElement).style.height = `${h}px`;
+        }
+      }
+    }
+  }, [wordWrap, activeFile.content, fontSize]);
 
   // Handle textarea text change
   const handleContentChange = (newVal: string) => {
@@ -649,6 +928,7 @@ void loop() {
 
   // Save active firmware code
   const handleSave = async () => {
+    if (!onSave) return;
     setIsSaving(true);
     setSaveSuccess(false);
     try {
@@ -665,7 +945,7 @@ void loop() {
     }
   };
 
-  // Compile / Verify Simulation
+  // Compile / Verify Syntax & Static Analysis
   const handleCompile = () => {
     setIsCompiling(true);
     setCompileStatus("idle");
@@ -680,9 +960,8 @@ void loop() {
     ]);
 
     setTimeout(() => {
-      // Check for syntax issues
-      const hasMissingSetup = !activeFile.content.includes("setup");
-      const hasMissingLoop = !activeFile.content.includes("loop");
+      // Run genuine C++ / Arduino static syntax validation
+      const syntaxResult = validateArduinoSyntax(activeFile.content, activeFile.name);
 
       const flashUsage = Math.min(
         Math.floor(activeFile.content.length * 42 + 2800),
@@ -696,30 +975,31 @@ void loop() {
       const flashPct = ((flashUsage / activeBoard.maxFlashBytes) * 100).toFixed(1);
       const sramPct = ((sramUsage / activeBoard.maxSramBytes) * 100).toFixed(1);
 
-      if (hasMissingSetup || hasMissingLoop) {
+      if (!syntaxResult.ok) {
         setCompileStatus("error");
         setBuildLogs((prev) => [
           ...prev,
-          `[ERROR] Compilation failed: Arduino sketch requires void setup() and void loop().`,
+          ...syntaxResult.errors,
+          `[ERROR] Compilation terminated due to ${syntaxResult.errors.length} syntax error${syntaxResult.errors.length > 1 ? "s" : ""}.`,
           `Linker exited with code 1.`,
         ]);
       } else {
         setCompileStatus("success");
         setBuildLogs((prev) => [
           ...prev,
-          `[BUILD] Object files compiled cleanly.`,
+          `[BUILD] Syntax verified cleanly. Object files compiled.`,
           `[LINK] Linking firmware.elf and generating firmware.bin...`,
           `[SIZE] Program storage space: ${flashUsage.toLocaleString()} bytes (${flashPct}% of ${activeBoard.maxFlashBytes.toLocaleString()} bytes)`,
           `[SIZE] Dynamic memory: ${sramUsage.toLocaleString()} bytes (${sramPct}% of ${activeBoard.maxSramBytes.toLocaleString()} bytes)`,
-          `✓ SUCCESS: Firmware compiled successfully (Build time: 0.28s).`,
+          `✓ SUCCESS: Firmware compiled successfully with 0 errors (Build time: 0.24s).`,
         ]);
       }
       setIsCompiling(false);
-    }, 600);
+    }, 450);
   };
 
   // Serial Monitor: Send command
-  const handleSendSerialCommand = () => {
+  const handleSendSerialCommand = async () => {
     if (!serialCommand.trim()) return;
     const cmd = serialCommand.trim();
     const now = new Date().toLocaleTimeString();
@@ -736,7 +1016,31 @@ void loop() {
 
     setSerialCommand("");
 
-    // Simulate microcontroller response
+    // If real physical hardware is connected via Web Serial, transmit bytes!
+    if (webSerialPort && isWebSerialConnected) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(cmd + "\r\n");
+        const writer = webSerialPort.writable.getWriter();
+        await writer.write(data);
+        writer.releaseLock();
+        return;
+      } catch (err: any) {
+        console.error("Web Serial write error:", err);
+        setSerialLogs((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(),
+            time: new Date().toLocaleTimeString(),
+            tag: "ERR",
+            text: `[TX ERROR] Failed to send to USB: ${err.message}`,
+          },
+        ]);
+        return;
+      }
+    }
+
+    // Fallback: Virtual simulated microcontroller response
     setTimeout(() => {
       let resp = `Command '${cmd}' received (ACK).`;
       if (cmd.toUpperCase() === "PING") resp = "PONG! Hardware live.";
@@ -781,11 +1085,14 @@ void loop() {
   const handleFixDelay = (lineNum: number) => {
     const lines = activeFile.content.split("\n");
     const targetIdx = lineNum - 1;
-    if (lines[targetIdx] && lines[targetIdx].includes("delay(")) {
-      lines[targetIdx] = `  // [Optimized] Replaced blocking delay with non-blocking check
-  static unsigned long lastTick = 0;
-  if (millis() - lastTick >= 500) {
-    lastTick = millis();
+    const line = lines[targetIdx] || "";
+    if (line.includes("delay(")) {
+      const match = line.match(/delay\s*\(\s*(\d+)\s*\)/);
+      const duration = match ? match[1] : "500";
+      lines[targetIdx] = `  // [Non-blocking] Replaced blocking delay(${duration}ms) with millis() timer
+  static unsigned long lastTime_${lineNum} = 0;
+  if (millis() - lastTime_${lineNum} >= ${duration}) {
+    lastTime_${lineNum} = millis();
     // Non-blocking timer task branch
   }`;
       handleContentChange(lines.join("\n"));
@@ -835,6 +1142,331 @@ void loop() {
     const newVal = val.substring(0, start) + "\n" + snippetCode + "\n" + val.substring(end);
     handleContentChange(newVal);
     setShowSnippetsMenu(false);
+  };
+
+  // Web Serial API Handlers
+  const handleConnectUsb = async () => {
+    if (typeof navigator === "undefined" || !("serial" in navigator)) {
+      alert("Web Serial API is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Opera.");
+      return;
+    }
+    try {
+      setIsWebSerialConnecting(true);
+      const port = await (navigator as any).serial.requestPort();
+      await port.open({ baudRate: serialBaud });
+      setWebSerialPort(port);
+      setIsWebSerialConnected(true);
+
+      const now = new Date().toLocaleTimeString();
+      setSerialLogs((prev) => [
+        ...prev,
+        {
+          id: String(Date.now()),
+          time: now,
+          tag: "USB",
+          text: `[CONNECTED] Physical hardware attached via Web Serial (${serialBaud} Baud).`,
+        },
+      ]);
+      setConsoleTab("serial");
+      setIsConsoleOpen(true);
+      readFromWebSerial(port);
+    } catch (err: any) {
+      console.warn("Web Serial error or cancelled:", err.message);
+    } finally {
+      setIsWebSerialConnecting(false);
+    }
+  };
+
+  const handleDisconnectUsb = async () => {
+    try {
+      if (serialReaderRef.current) {
+        await serialReaderRef.current.cancel();
+      }
+      if (webSerialPort) {
+        await webSerialPort.close();
+      }
+    } catch (e) {
+      console.warn("Web Serial disconnect error:", e);
+    }
+    setWebSerialPort(null);
+    setIsWebSerialConnected(false);
+  };
+
+  const readFromWebSerial = async (port: any) => {
+    try {
+      const textDecoder = new TextDecoderStream();
+      port.readable.pipeTo(textDecoder.writable);
+      const reader = textDecoder.readable.getReader();
+      serialReaderRef.current = reader;
+
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          buffer += value;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              const now = new Date().toLocaleTimeString();
+              setSerialLogs((prev) => [
+                ...prev.slice(-199),
+                { id: String(Date.now() + Math.random()), time: now, tag: "HW", text: trimmed },
+              ]);
+              parseSerialTelemetry(trimmed);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("Web Serial stream error:", err.message);
+    }
+  };
+
+  // Telemetry Parser for Live Serial Waveform Plotter
+  const parseSerialTelemetry = useCallback((text: string) => {
+    if (isPlotterPaused) return;
+    const matches = text.match(/[-+]?\d*\.?\d+/g);
+    if (matches && matches.length > 0) {
+      const nums = matches.slice(0, 3).map((n) => parseFloat(n)).filter((n) => !isNaN(n));
+      if (nums.length > 0) {
+        setPlotterData((prev) => [...prev.slice(-120), { time: Date.now(), values: nums }]);
+      }
+    }
+  }, [isPlotterPaused]);
+
+  // Virtual Telemetry Simulator
+  useEffect(() => {
+    if (!isSimulatingTelemetry) return;
+    let step = 0;
+    const interval = setInterval(() => {
+      step += 0.2;
+      const ch1 = Math.round(512 + Math.sin(step) * 350 + (Math.random() * 30 - 15));
+      const ch2 = +(24 + Math.sin(step * 0.4) * 4 + Math.random() * 0.5).toFixed(1);
+      const ch3 = Math.round(55 + Math.cos(step * 0.25) * 25);
+      const fakeLine = `CH1_ADC: ${ch1}, CH2_TEMP: ${ch2}, CH3_HUM: ${ch3}`;
+
+      setSerialLogs((prev) => [
+        ...prev.slice(-199),
+        { id: String(Date.now() + Math.random()), time: new Date().toLocaleTimeString(), tag: "SIM", text: fakeLine },
+      ]);
+      setPlotterData((prev) => [
+        ...prev.slice(-120),
+        { time: Date.now(), values: [ch1, ch2, ch3] },
+      ]);
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [isSimulatingTelemetry]);
+
+  // HTML5 Canvas Drawing for Serial Plotter
+  useEffect(() => {
+    if (consoleTab !== "plotter" || !plotterCanvasRef.current) return;
+    const canvas = plotterCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.fillStyle = "#090c14";
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = "#1b2234";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < width; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += 30) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    if (plotterData.length < 2) {
+      ctx.fillStyle = "#4b5563";
+      ctx.font = "11px monospace";
+      ctx.fillText("Waiting for numerical serial stream or click 'Simulate Telemetry'...", 20, height / 2);
+      return;
+    }
+
+    let minVal = Infinity;
+    let maxVal = -Infinity;
+    plotterData.forEach((d) => {
+      d.values.forEach((v) => {
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+      });
+    });
+
+    if (minVal === maxVal) {
+      minVal -= 1;
+      maxVal += 1;
+    }
+    const range = maxVal - minVal;
+
+    const channelColors = ["#06b6d4", "#f59e0b", "#10b981"];
+    const channelCount = Math.max(...plotterData.map((d) => d.values.length));
+
+    for (let ch = 0; ch < channelCount; ch++) {
+      ctx.strokeStyle = channelColors[ch % channelColors.length];
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      plotterData.forEach((d, idx) => {
+        const val = d.values[ch] ?? minVal;
+        const x = (idx / (plotterData.length - 1)) * (width - 60) + 10;
+        const normalized = (val - minVal) / range;
+        const y = height - 20 - normalized * (height - 40);
+
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "10px monospace";
+    ctx.fillText(`Max: ${maxVal.toFixed(1)}`, width - 55, 15);
+    ctx.fillText(`Min: ${minVal.toFixed(1)}`, width - 55, height - 10);
+  }, [plotterData, consoleTab]);
+
+  // AI Copilot Actions
+  const handleAiFixCode = async () => {
+    setAiLoading(true);
+    setAiExplanation(null);
+    try {
+      const errorList = [
+        ...analysis.blockingDelays.map((d) => `Line ${d.line}: Blocking delay(${d.durationMs}ms)`),
+        ...(compileStatus === "error" ? buildLogs.filter((l) => l.includes("ERROR")) : []),
+      ];
+
+      const res = await fetch("/api/firmware/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "fix",
+          code: activeFile.content,
+          board: activeBoard.label,
+          errors: errorList,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.fixedCode) {
+        handleContentChange(data.fixedCode);
+        setAiExplanation(data.explanation || "Firmware updated with non-blocking timer loops.");
+      } else {
+        alert(data.error || "AI fix failed.");
+      }
+    } catch (err: any) {
+      alert(`AI fix error: ${err.message}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiGenerateDrivers = async () => {
+    setAiLoading(true);
+    setAiExplanation(null);
+    try {
+      const res = await fetch("/api/firmware/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "generate_driver",
+          code: activeFile.content,
+          board: activeBoard.label,
+          circuit: circuitConnections,
+          query: aiCustomPrompt || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.code) {
+        handleContentChange(data.code);
+        setAiExplanation(data.explanation || "Hardware driver generated from circuit connections.");
+      } else {
+        alert(data.error || "Driver generation failed.");
+      }
+    } catch (err: any) {
+      alert(`Driver error: ${err.message}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiExplainCode = async () => {
+    setAiLoading(true);
+    setAiExplanation(null);
+    try {
+      const res = await fetch("/api/firmware/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "explain",
+          code: activeFile.content,
+          board: activeBoard.label,
+          query: aiCustomPrompt || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setAiExplanation(data.explanation);
+      }
+    } catch (err: any) {
+      alert(`Explain error: ${err.message}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Include Library into active file
+  const handleIncludeLibrary = (lib: typeof EMBEDDED_LIBRARIES[0]) => {
+    const lines = activeFile.content.split("\n");
+    const includeLine = `#include <${lib.header}>`;
+    if (activeFile.content.includes(lib.header)) {
+      alert(`Library <${lib.header}> is already included in ${activeFile.name}`);
+      return;
+    }
+    let insertIdx = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().startsWith("#include")) {
+        insertIdx = i + 1;
+      }
+    }
+    lines.splice(insertIdx, 0, includeLine);
+    handleContentChange(lines.join("\n"));
+  };
+
+  // Add library to platformio.ini
+  const handleAddLibraryToPlatformIo = (lib: typeof EMBEDDED_LIBRARIES[0]) => {
+    if (!lib.platformio) return;
+    setFiles((prev) => {
+      const pio = prev.find((f) => f.name === "platformio.ini");
+      if (pio) {
+        if (pio.content.includes(lib.platformio)) {
+          alert(`Dependency already present in platformio.ini`);
+          return prev;
+        }
+        let updated = pio.content;
+        if (updated.includes("lib_deps =")) {
+          updated = updated.replace("lib_deps =", `lib_deps =\n    ${lib.platformio}`);
+        } else {
+          updated += `\nlib_deps =\n    ${lib.platformio}\n`;
+        }
+        return prev.map((f) => (f.name === "platformio.ini" ? { ...f, content: updated, isModified: true } : f));
+      } else {
+        const initialPio = generatePlatformIoIni(selectedBoardId, analysis.baudRate || 115200) + `\nlib_deps =\n    ${lib.platformio}\n`;
+        return [...prev, { name: "platformio.ini", content: initialPio, isModified: true }];
+      }
+    });
+    alert(`Added ${lib.name} to platformio.ini!`);
   };
 
   // Sync pins from circuit connections
@@ -985,76 +1617,64 @@ void loop() {
       {/* =========================================================================
           Top IDE Header & Master Toolbar
          ========================================================================= */}
-      <div className="flex flex-wrap items-center justify-between border-b border-zinc-800/90 bg-[#0e121a] px-3 py-1.5 gap-2 shrink-0 select-none">
+      <div className="flex items-center justify-between border-b border-zinc-800 bg-[#0e1117] px-3 py-1.5 shrink-0 select-none min-h-[44px]">
         {/* Left: Project Brand + File Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto max-w-full py-0.5 no-scrollbar">
+        <div className="flex items-center gap-2 overflow-x-auto min-w-0 flex-1 mr-3 no-scrollbar">
           {/* Micro Project Pill */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 text-xs font-mono font-bold mr-1 shrink-0">
-            <Cpu className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
-            <span className="hidden sm:inline">IDE:</span>
-            <span className="text-zinc-200">{projectName || "Firmware"}</span>
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800/80 border border-zinc-700/60 text-zinc-300 text-xs font-mono shrink-0">
+            <Cpu className="h-3.5 w-3.5 text-sky-400" />
+            <span className="hidden sm:inline text-zinc-400">Workspace:</span>
+            <span className="text-zinc-200 font-medium truncate max-w-[120px]">{projectName || "Firmware"}</span>
           </div>
 
           {/* File Tabs */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {files.map((file) => {
               const isActive = file.name === activeFileName;
-              const isHeader = file.name.endsWith(".h");
-              const isCpp = file.name.endsWith(".cpp");
-              const isIni = file.name.endsWith(".ini");
 
               return (
-                <div
+                <button
                   key={file.name}
                   onClick={() => setActiveFileName(file.name)}
-                  className={`group relative flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono transition-all cursor-pointer border ${
+                  className={`group relative flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono transition-colors border ${
                     isActive
-                      ? "bg-[#181d28] text-cyan-300 border-cyan-700/60 shadow-xs font-semibold"
-                      : "text-zinc-400 border-transparent hover:bg-zinc-800/50 hover:text-zinc-200"
+                      ? "bg-zinc-800/90 text-zinc-100 border-zinc-700 font-medium"
+                      : "text-zinc-400 border-transparent hover:text-zinc-200 hover:bg-zinc-800/40"
                   }`}
                 >
-                  <FileCode
-                    className={`h-3.5 w-3.5 ${
-                      isHeader
-                        ? "text-blue-400"
-                        : isCpp
-                        ? "text-purple-400"
-                        : isIni
-                        ? "text-amber-400"
-                        : "text-cyan-400"
-                    }`}
-                  />
+                  <FileCode className={`h-3.5 w-3.5 ${isActive ? "text-sky-400" : "text-zinc-500"}`} />
                   <span>{file.name}</span>
 
-                  {/* Modified Unsaved Dot */}
                   {file.isModified && (
                     <span
-                      className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping"
+                      className="h-1.5 w-1.5 rounded-full bg-sky-400"
                       title="Unsaved changes"
                     />
                   )}
 
                   {file.name !== "main.ino" && (
-                    <button
-                      onClick={(e) => handleCloseFile(file.name, e)}
-                      className="opacity-0 group-hover:opacity-100 ml-1 hover:text-rose-400 text-zinc-500 rounded p-0.5 transition-opacity"
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseFile(file.name, e);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 ml-0.5 hover:text-rose-400 text-zinc-500 rounded p-0.5"
                       title="Close file"
                     >
                       ×
-                    </button>
+                    </span>
                   )}
-                </div>
+                </button>
               );
             })}
 
             {/* Add File Button */}
             <button
               onClick={() => setShowNewFileModal(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-cyan-300 hover:bg-zinc-800/60 rounded transition-colors"
-              title="Create new header or source file"
+              className="flex items-center gap-1 px-1.5 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 rounded transition-colors"
+              title="Create new file"
             >
-              <Plus className="h-3 w-3" />
-              <span className="text-[11px] font-mono hidden md:inline">New File</span>
+              <Plus className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -1066,7 +1686,7 @@ void loop() {
             <select
               value={selectedBoardId}
               onChange={(e) => setSelectedBoardId(e.target.value)}
-              className="appearance-none bg-zinc-900 border border-zinc-700/80 hover:border-zinc-500 rounded px-2.5 py-1 pr-6 text-[11px] font-mono text-zinc-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer shadow-xs"
+              className="appearance-none bg-zinc-900 border border-zinc-700/80 hover:border-zinc-600 rounded px-2.5 py-1 pr-6 text-xs font-mono text-zinc-200 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs"
             >
               {BOARD_OPTIONS.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -1074,140 +1694,41 @@ void loop() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="h-3 w-3 absolute right-1.5 top-2 pointer-events-none text-zinc-400" />
+            <ChevronDown className="h-3 w-3 absolute right-2 top-2 pointer-events-none text-zinc-400" />
           </div>
 
-          {/* Verify & Compile Button */}
+          {/* Primary Action 1: Verify & Compile */}
           <button
             onClick={handleCompile}
             disabled={isCompiling}
-            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-mono font-semibold transition-all border ${
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-mono font-medium transition-colors border ${
               isCompiling
-                ? "bg-amber-950/40 text-amber-300 border-amber-800/60 animate-pulse"
+                ? "bg-zinc-800 text-amber-300 border-zinc-700"
                 : compileStatus === "success"
-                ? "bg-emerald-950/40 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/40"
+                ? "bg-zinc-800 text-emerald-300 border-zinc-700 hover:bg-zinc-700"
                 : compileStatus === "error"
-                ? "bg-rose-950/40 text-rose-300 border-rose-700/60 hover:bg-rose-900/40"
-                : "bg-zinc-900 text-cyan-300 border-cyan-800/50 hover:bg-cyan-950/50 hover:border-cyan-600"
+                ? "bg-zinc-800 text-rose-300 border-zinc-700 hover:bg-zinc-700"
+                : "bg-zinc-800 text-zinc-200 border-zinc-700 hover:bg-zinc-700"
             }`}
             title="Verify & compile sketch syntax (Ctrl+Enter)"
           >
             {isCompiling ? (
-              <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-400" />
             ) : compileStatus === "success" ? (
-              <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
             ) : (
-              <ShieldCheck className="h-3 w-3 text-cyan-400" />
+              <ShieldCheck className="h-3.5 w-3.5 text-zinc-400" />
             )}
             <span className="hidden sm:inline">
               {isCompiling ? "Compiling..." : compileStatus === "success" ? "Compiled" : "Verify"}
             </span>
           </button>
 
-          {/* Format Code */}
-          <button
-            onClick={handleFormatCode}
-            className="flex items-center gap-1 rounded border border-zinc-700/70 bg-zinc-900 px-2 py-1 text-[11px] font-mono text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            title="Auto-format code indentation (Shift+Alt+F)"
-          >
-            <Wand2 className="h-3 w-3 text-purple-400" />
-            <span className="hidden md:inline">Format</span>
-          </button>
-
-          {/* Sync Pins from Circuit Studio */}
-          <button
-            onClick={handleSyncPinsFromCircuit}
-            className="flex items-center gap-1 rounded border border-zinc-700/70 bg-zinc-900 px-2 py-1 text-[11px] font-mono text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            title="Generate C #define pin constants from Circuit Studio wire connections"
-          >
-            <Layers className="h-3 w-3 text-cyan-400" />
-            <span className="hidden lg:inline">Sync Pins</span>
-          </button>
-
-          {/* Snippets Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSnippetsMenu(!showSnippetsMenu)}
-              className="flex items-center gap-1 rounded border border-zinc-700/70 bg-zinc-900 px-2 py-1 text-[11px] font-mono text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            >
-              <Code2 className="h-3 w-3 text-amber-400" />
-              <span className="hidden sm:inline">Snippets</span>
-              <ChevronDown className="h-3 w-3 text-zinc-500" />
-            </button>
-
-            {showSnippetsMenu && (
-              <div className="absolute right-0 mt-1 w-80 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl z-50 p-2 space-y-1">
-                <div className="px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 border-b border-zinc-800 flex justify-between items-center">
-                  <span>Firmware Snippets</span>
-                  <span className="text-zinc-600">Click to insert</span>
-                </div>
-                <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
-                  {SNIPPET_TEMPLATES.map((tmpl, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleInsertSnippet(tmpl.code)}
-                      className="w-full text-left p-2 rounded hover:bg-zinc-800 text-zinc-200 transition-colors group border border-transparent hover:border-zinc-700/50"
-                    >
-                      <div className="font-mono text-xs font-semibold text-cyan-300 group-hover:text-cyan-200">
-                        {tmpl.title}
-                      </div>
-                      <div className="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
-                        {tmpl.description}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Export Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-1 rounded border border-zinc-700/70 bg-zinc-900 px-2 py-1 text-[11px] font-mono text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            >
-              <Download className="h-3 w-3 text-zinc-400" />
-              <span className="hidden sm:inline">Export</span>
-              <ChevronDown className="h-3 w-3 text-zinc-500" />
-            </button>
-
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1 w-56 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl z-50 p-1 space-y-0.5 font-mono text-xs">
-                <button
-                  onClick={handleDownloadFile}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-300 flex items-center gap-2"
-                >
-                  <Download className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>Download {activeFileName}</span>
-                </button>
-                <button
-                  onClick={handleDownloadPlatformIo}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-300 flex items-center gap-2"
-                >
-                  <Settings className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Download platformio.ini</span>
-                </button>
-                <button
-                  onClick={handleCopy}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-300 flex items-center gap-2"
-                >
-                  <Copy className="h-3.5 w-3.5 text-zinc-400" />
-                  <span>Copy Code to Clipboard</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Save Button */}
+          {/* Primary Action 2: Save */}
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className={`flex items-center gap-1.5 rounded px-3 py-1 text-[11px] font-mono font-semibold transition-all ${
-              saveSuccess
-                ? "bg-emerald-600 text-white shadow-sm"
-                : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm"
-            }`}
+            className="flex items-center gap-1.5 rounded px-3 py-1 text-xs font-mono font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
           >
             {saveSuccess ? (
               <Check className="h-3.5 w-3.5 text-white" />
@@ -1217,23 +1738,158 @@ void loop() {
             <span>{isSaving ? "Saving..." : saveSuccess ? "Saved!" : "Save"}</span>
           </button>
 
-          {/* Run in Simulator Button */}
-          {onSwitchToCircuitTab && (
-            <button
-              onClick={onSwitchToCircuitTab}
-              className="flex items-center gap-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 px-3 py-1 text-[11px] font-mono font-bold text-white shadow-sm transition-all"
-              title="Test this firmware live in Circuit Studio simulator"
-            >
-              <Play className="h-3 w-3 fill-white" />
-              <span className="hidden sm:inline">Simulator</span>
-            </button>
-          )}
+          {/* Primary Action 3: Web Serial Connect USB */}
+          <button
+            onClick={isWebSerialConnected ? handleDisconnectUsb : handleConnectUsb}
+            disabled={isWebSerialConnecting}
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-mono font-medium transition-colors border ${
+              isWebSerialConnected
+                ? "bg-emerald-950/40 border-emerald-700/60 text-emerald-300"
+                : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+            }`}
+            title={
+              isWebSerialConnected
+                ? "Physical hardware connected. Click to disconnect USB"
+                : "Connect real physical board via Web Serial USB"
+            }
+          >
+            <Usb className={`h-3.5 w-3.5 ${isWebSerialConnected ? "text-emerald-400" : "text-zinc-400"}`} />
+            <span className="hidden md:inline">
+              {isWebSerialConnecting ? "Connecting..." : isWebSerialConnected ? "USB Online" : "Connect USB"}
+            </span>
+          </button>
 
-          {/* Toggle Right Inspector */}
+          {/* Tools Menu Dropdown (Format, Sync Pins, Snippets, Export, Simulator) */}
+          <div className="relative">
+            <button
+              onClick={() => setShowToolsMenu(!showToolsMenu)}
+              className={`flex items-center gap-1 rounded border px-2.5 py-1 text-xs font-mono font-medium transition-colors ${
+                showToolsMenu
+                  ? "bg-zinc-700 text-white border-zinc-600"
+                  : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+              }`}
+              title="Tools & Utilities"
+            >
+              <span>Tools</span>
+              <ChevronDown className="h-3 w-3 text-zinc-400" />
+            </button>
+
+            {showToolsMenu && (
+              <div className="absolute right-0 mt-1.5 w-60 rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50 p-1 space-y-0.5 font-mono text-xs">
+                <button
+                  onClick={() => {
+                    handleFormatCode();
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center justify-between"
+                >
+                  <span className="flex items-center gap-2">
+                    <Wand2 className="h-3.5 w-3.5 text-zinc-400" />
+                    Format Code
+                  </span>
+                  <span className="text-[10px] text-zinc-500 font-sans">Shift+Alt+F</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleSyncPinsFromCircuit();
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2"
+                >
+                  <Layers className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Sync Pins from Circuit</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowSnippetsMenu(true);
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2"
+                >
+                  <Code2 className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Insert Snippet...</span>
+                </button>
+
+                <div className="my-1 border-t border-zinc-800" />
+
+                <button
+                  onClick={() => {
+                    handleDownloadFile();
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2"
+                >
+                  <Download className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Download {activeFileName}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleDownloadPlatformIo();
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2"
+                >
+                  <Settings className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Download platformio.ini</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCopy();
+                    setShowToolsMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2"
+                >
+                  <Copy className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Copy Code to Clipboard</span>
+                </button>
+
+                {onSwitchToCircuitTab && (
+                  <>
+                    <div className="my-1 border-t border-zinc-800" />
+                    <button
+                      onClick={() => {
+                        onSwitchToCircuitTab();
+                        setShowToolsMenu(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded hover:bg-zinc-800 text-emerald-400 flex items-center gap-2 font-semibold"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      <span>Test in Circuit Simulator</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* AI Copilot Quick Launcher */}
+          <button
+            onClick={() => {
+              setIsInspectorOpen(true);
+              setInspectorTab("ai");
+            }}
+            className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-mono font-medium transition-colors ${
+              isInspectorOpen && inspectorTab === "ai"
+                ? "bg-zinc-800 border-sky-500/80 text-sky-300"
+                : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+            }`}
+            title="Open Gemma AI Assistant"
+          >
+            <Bot className="h-3.5 w-3.5 text-sky-400" />
+            <span className="hidden md:inline">AI Copilot</span>
+          </button>
+
+          {/* Toggle Right Inspector Pane */}
           <button
             onClick={() => setIsInspectorOpen(!isInspectorOpen)}
-            className={`p-1.5 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-700/60 ${
-              isInspectorOpen ? "bg-zinc-800 text-cyan-300 border-cyan-800" : "bg-zinc-900"
+            className={`p-1.5 rounded transition-colors border ${
+              isInspectorOpen
+                ? "bg-zinc-800 text-sky-400 border-zinc-700"
+                : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200"
             }`}
             title={isInspectorOpen ? "Hide Inspector Pane" : "Show Inspector Pane"}
           >
@@ -1389,14 +2045,14 @@ void loop() {
          ========================================================================= */}
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left Side: Code Editor + Bottom Panel */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#0d1017] overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 bg-[#090b10] overflow-hidden">
           {/* Code Editor Surface */}
           <div className="flex-1 flex overflow-hidden relative">
             {/* Synchronized Gutter Line Numbers & Breakpoints */}
             <div
               ref={gutterRef}
-              className="w-12 bg-[#090c12] text-zinc-600 text-[11px] font-mono select-none py-3 px-1.5 text-right border-r border-zinc-800/80 overflow-hidden shrink-0 space-y-0"
-              style={{ lineHeight: "24px" }}
+              className="w-12 bg-[#08090d] text-zinc-600 text-[11px] font-mono select-none px-1.5 text-right border-r border-zinc-800/80 overflow-hidden shrink-0 space-y-0"
+              style={{ paddingTop: "12px", paddingBottom: "12px", lineHeight: "22px" }}
             >
               {activeLines.map((_, index) => {
                 const lineNum = index + 1;
@@ -1409,14 +2065,14 @@ void loop() {
                     key={lineNum}
                     onClick={() => handleToggleBreakpoint(lineNum)}
                     className={`flex items-center justify-end gap-1 cursor-pointer group ${
-                      isCurrent ? "text-cyan-400 font-bold" : "hover:text-zinc-400"
+                      isCurrent ? "text-zinc-200 font-semibold" : "hover:text-zinc-400"
                     }`}
-                    style={{ height: "24px" }}
+                    style={{ height: "22px" }}
                     title={`Line ${lineNum} - Click to toggle breakpoint`}
                   >
                     {/* Breakpoint Dot */}
                     {hasBreakpoint ? (
-                      <span className="h-2 w-2 rounded-full bg-rose-500 shadow-sm shadow-rose-500/80 shrink-0" />
+                      <span className="h-2 w-2 rounded-full bg-rose-500 shadow-sm shrink-0" />
                     ) : (
                       <span className="h-1.5 w-1.5 rounded-full bg-rose-500/0 group-hover:bg-rose-500/40 shrink-0" />
                     )}
@@ -1437,10 +2093,12 @@ void loop() {
               {/* Syntax Highlighted Backdrop */}
               <div
                 ref={codeBackdropRef}
-                className="absolute inset-0 pointer-events-none p-3 font-mono leading-6 overflow-hidden select-none"
+                className="absolute inset-0 pointer-events-none px-3 font-mono overflow-hidden select-none"
                 style={{
+                  paddingTop: "12px",
+                  paddingBottom: "12px",
                   fontSize: `${fontSize}px`,
-                  lineHeight: "24px",
+                  lineHeight: "22px",
                   whiteSpace: wordWrap ? "pre-wrap" : "pre",
                   tabSize: 2,
                 }}
@@ -1451,7 +2109,8 @@ void loop() {
                   return (
                     <div
                       key={lineIdx}
-                      className={`min-h-[24px] ${isCurrent ? "bg-cyan-950/20 rounded-xs" : ""}`}
+                      style={{ minHeight: "22px" }}
+                      className={`${isCurrent ? "bg-zinc-800/30 rounded-xs" : ""}`}
                     >
                       {tokens.map((token, tIdx) => (
                         <span key={tIdx} className={getTokenClass(token.type)}>
@@ -1476,11 +2135,13 @@ void loop() {
                 autoCapitalize="off"
                 autoComplete="off"
                 style={{
+                  paddingTop: "12px",
+                  paddingBottom: "12px",
                   fontSize: `${fontSize}px`,
-                  lineHeight: "24px",
+                  lineHeight: "22px",
                   tabSize: 2,
                 }}
-                className={`absolute inset-0 h-full w-full bg-transparent text-transparent caret-cyan-400 p-3 font-mono leading-6 resize-none focus:outline-none selection:bg-cyan-600/30 selection:text-transparent overflow-auto whitespace-pre ${
+                className={`absolute inset-0 h-full w-full bg-transparent text-transparent caret-sky-400 px-3 font-mono resize-none focus:outline-none selection:bg-sky-500/20 selection:text-transparent overflow-auto ${
                   wordWrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"
                 }`}
                 placeholder="// Write Arduino C++ firmware code here..."
@@ -1491,57 +2152,79 @@ void loop() {
           {/* =========================================================================
               Editor Bottom Status Bar
              ========================================================================= */}
-          <div className="flex items-center justify-between border-t border-zinc-800 bg-[#090c12] px-3 py-1 text-[11px] font-mono text-zinc-400 shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-cyan-300">
-                <FileCode className="h-3 w-3 text-cyan-400" />
-                {activeFile.name}
+          <div className="flex items-center justify-between border-t border-zinc-800 bg-[#090b10] px-3 h-7 text-[11px] font-mono text-zinc-400 shrink-0 whitespace-nowrap overflow-x-auto no-scrollbar gap-2 select-none">
+            {/* Left Status Indicators */}
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink overflow-hidden">
+              <span className="flex items-center gap-1 text-zinc-200 shrink-0">
+                <FileCode className="h-3 w-3 text-zinc-400 shrink-0" />
+                <span className="truncate max-w-[120px] sm:max-w-none">{activeFile.name}</span>
               </span>
-              <span>•</span>
-              <span className="text-zinc-300">{activeBoard.mcu}</span>
-              <span>•</span>
-              <span>Spaces: 2</span>
-              <span>•</span>
-              <span>UTF-8</span>
+
+              {activeBoard.mcu && (
+                <>
+                  <span className="text-zinc-600 hidden md:inline shrink-0">•</span>
+                  <span
+                    className="text-zinc-300 hidden md:inline truncate max-w-[140px] xl:max-w-none shrink-0"
+                    title={activeBoard.mcu}
+                  >
+                    {activeBoard.mcu}
+                  </span>
+                </>
+              )}
+
+              <span className="text-zinc-600 hidden lg:inline shrink-0">•</span>
+              <span className="hidden lg:inline shrink-0">Spaces: 2</span>
+
+              <span className="text-zinc-600 hidden xl:inline shrink-0">•</span>
+              <span className="hidden xl:inline shrink-0">UTF-8</span>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* Right Status Actions & Position */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
               {analysis.baudRate && (
-                <span className="flex items-center gap-1 text-emerald-400">
-                  <Radio className="h-3 w-3" />
-                  {analysis.baudRate} Baud
+                <span className="hidden sm:flex items-center gap-1 text-zinc-300 shrink-0">
+                  <Radio className="h-3 w-3 text-zinc-400 shrink-0" />
+                  <span>{analysis.baudRate} Baud</span>
                 </span>
               )}
+
               {analysis.blockingDelays.length > 0 && (
-                <span
+                <button
+                  type="button"
                   onClick={() => {
                     setIsConsoleOpen(true);
                     setConsoleTab("problems");
                   }}
-                  className="flex items-center gap-1 text-amber-400 cursor-pointer hover:underline"
+                  className="flex items-center gap-1 text-amber-400 hover:text-amber-300 transition-colors shrink-0"
+                  title="View blocking delay warnings"
                 >
-                  <AlertTriangle className="h-3 w-3" />
-                  {analysis.blockingDelays.length} Warning{analysis.blockingDelays.length > 1 ? "s" : ""}
-                </span>
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  <span>
+                    {analysis.blockingDelays.length} Warning{analysis.blockingDelays.length > 1 ? "s" : ""}
+                  </span>
+                </button>
               )}
-              <span className="text-zinc-300">
+
+              <span className="text-zinc-300 shrink-0">
                 Ln {cursorPos.line}, Col {cursorPos.col}
               </span>
-              <span className="text-zinc-500 hidden sm:inline">
+
+              <span className="text-zinc-500 hidden xl:inline shrink-0">
                 {activeLines.length} lines • {activeFile.content.length} chars
               </span>
 
               {/* Bottom Console Toggle */}
               <button
+                type="button"
                 onClick={() => setIsConsoleOpen(!isConsoleOpen)}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors border shrink-0 ${
                   isConsoleOpen
-                    ? "bg-zinc-800 text-cyan-300 border-zinc-700"
-                    : "text-zinc-500 hover:text-zinc-200 border-transparent hover:bg-zinc-800/50"
+                    ? "bg-zinc-800 text-zinc-200 border-zinc-700 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-800/60"
                 }`}
                 title="Toggle Output & Serial Monitor Terminal"
               >
-                <Terminal className="h-3 w-3" />
+                <Terminal className="h-3 w-3 shrink-0" />
                 <span>Console</span>
               </button>
             </div>
@@ -1557,9 +2240,9 @@ void loop() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setConsoleTab("build")}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-semibold transition-colors border-b-2 ${
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-medium transition-colors border-b-2 ${
                       consoleTab === "build"
-                        ? "border-cyan-400 text-cyan-300 bg-[#0d1017]"
+                        ? "border-sky-500 text-zinc-100 bg-[#0e1117]"
                         : "border-transparent text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
@@ -1575,9 +2258,9 @@ void loop() {
 
                   <button
                     onClick={() => setConsoleTab("serial")}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-semibold transition-colors border-b-2 ${
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-medium transition-colors border-b-2 ${
                       consoleTab === "serial"
-                        ? "border-cyan-400 text-cyan-300 bg-[#0d1017]"
+                        ? "border-sky-500 text-zinc-100 bg-[#0e1117]"
                         : "border-transparent text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
@@ -1590,14 +2273,29 @@ void loop() {
 
                   <button
                     onClick={() => setConsoleTab("problems")}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-semibold transition-colors border-b-2 ${
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-medium transition-colors border-b-2 ${
                       consoleTab === "problems"
-                        ? "border-cyan-400 text-cyan-300 bg-[#0d1017]"
+                        ? "border-sky-500 text-zinc-100 bg-[#0e1117]"
                         : "border-transparent text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
                     <span>Problems ({analysis.blockingDelays.length})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setConsoleTab("plotter")}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs font-medium transition-colors border-b-2 ${
+                      consoleTab === "plotter"
+                        ? "border-sky-500 text-zinc-100 bg-[#0e1117]"
+                        : "border-transparent text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    <LineChart className="h-3.5 w-3.5" />
+                    <span>Plotter</span>
+                    {plotterData.length > 0 && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    )}
                   </button>
                 </div>
 
@@ -1607,7 +2305,7 @@ void loop() {
                     <select
                       value={serialBaud}
                       onChange={(e) => setSerialBaud(parseInt(e.target.value, 10))}
-                      className="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 focus:outline-none"
+                      className="bg-zinc-900 border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-300 focus:outline-none"
                     >
                       <option value={9600}>9600 Baud</option>
                       <option value={19200}>19200 Baud</option>
@@ -1621,8 +2319,9 @@ void loop() {
                     onClick={() => {
                       if (consoleTab === "build") setBuildLogs([]);
                       if (consoleTab === "serial") setSerialLogs([]);
+                      if (consoleTab === "plotter") setPlotterData([]);
                     }}
-                    className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                    className="text-zinc-500 hover:text-zinc-300 p-1"
                     title="Clear Console"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -1630,7 +2329,7 @@ void loop() {
 
                   <button
                     onClick={() => setIsConsoleOpen(false)}
-                    className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                    className="text-zinc-500 hover:text-zinc-300 p-1"
                     title="Close Console"
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -1640,17 +2339,17 @@ void loop() {
 
               {/* Console Body Tab 1: Build Output */}
               {consoleTab === "build" && (
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-1 font-mono text-[11px] bg-[#0d1017]">
+                <div className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-[11px] bg-[#090b10]">
                   {buildLogs.map((log, idx) => (
                     <div
                       key={idx}
                       className={`${
                         log.includes("ERROR")
-                          ? "text-rose-400 font-bold"
+                          ? "text-rose-400 font-semibold"
                           : log.includes("SUCCESS") || log.includes("✓")
-                          ? "text-emerald-400 font-bold"
+                          ? "text-emerald-400 font-semibold"
                           : log.includes("SIZE")
-                          ? "text-cyan-300"
+                          ? "text-zinc-300"
                           : "text-zinc-400"
                       }`}
                     >
@@ -1668,19 +2367,21 @@ void loop() {
 
               {/* Console Tab 2: Serial Monitor */}
               {consoleTab === "serial" && (
-                <div className="flex-1 flex flex-col min-h-0 bg-[#0a0d14]">
-                  <div className="flex-1 overflow-y-auto p-2 space-y-1 text-[11px] font-mono">
+                <div className="flex-1 flex flex-col min-h-0 bg-[#090b10]">
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-1 text-[11px] font-mono">
                     {serialLogs.map((log) => (
                       <div key={log.id} className="flex items-start gap-2">
                         <span className="text-zinc-600 shrink-0">[{log.time}]</span>
                         <span
-                          className={`font-bold shrink-0 ${
+                          className={`font-semibold shrink-0 ${
                             log.tag === "TX"
-                              ? "text-cyan-400"
+                              ? "text-sky-400"
                               : log.tag === "RX"
                               ? "text-emerald-400"
                               : log.tag === "BOOT"
                               ? "text-amber-400"
+                              : log.tag === "USB"
+                              ? "text-purple-400"
                               : "text-zinc-400"
                           }`}
                         >
@@ -1693,7 +2394,7 @@ void loop() {
                   </div>
 
                   {/* Serial Command Input */}
-                  <div className="flex items-center gap-1.5 border-t border-zinc-800 bg-[#0e121a] p-1.5">
+                  <div className="flex items-center gap-1.5 border-t border-zinc-800 bg-[#0e1117] p-1.5">
                     <input
                       type="text"
                       value={serialCommand}
@@ -1702,11 +2403,11 @@ void loop() {
                         if (e.key === "Enter") handleSendSerialCommand();
                       }}
                       placeholder="Send Serial payload (e.g., PING, STATUS, AT+CMD)..."
-                      className="flex-1 bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700"
                     />
                     <button
                       onClick={handleSendSerialCommand}
-                      className="flex items-center gap-1 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-semibold transition-colors"
+                      className="flex items-center gap-1 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 rounded text-xs font-medium transition-colors"
                     >
                       <Send className="h-3 w-3" />
                       <span>Send</span>
@@ -1717,38 +2418,106 @@ void loop() {
 
               {/* Console Tab 3: Problems List */}
               {consoleTab === "problems" && (
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-[#0d1017]">
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#090b10]">
                   {analysis.blockingDelays.length === 0 ? (
-                    <div className="text-emerald-400 flex items-center gap-2 p-2">
+                    <div className="text-emerald-400 flex items-center gap-2 p-1">
                       <CheckCircle2 className="h-4 w-4" />
-                      <span>No code problems or blocking delays detected! Sketch is optimized.</span>
+                      <span>No code problems or blocking delays detected. Sketch is clean.</span>
                     </div>
                   ) : (
                     analysis.blockingDelays.map((delay, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between p-2 rounded bg-amber-950/20 border border-amber-900/50 text-xs"
+                        className="flex items-center justify-between p-2.5 rounded border border-zinc-800 bg-zinc-900/40 text-xs"
                       >
                         <div
                           onClick={() => handleJumpToLine(delay.line)}
-                          className="flex items-center gap-2 cursor-pointer hover:underline text-amber-200"
+                          className="flex items-center gap-2 cursor-pointer hover:underline text-zinc-200"
                         >
                           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
                           <span>
                             Blocking delay({delay.durationMs}ms) freezes sensor polling.
                           </span>
-                          <span className="text-zinc-400 font-bold">Line {delay.line}</span>
+                          <span className="text-zinc-500 font-mono">Line {delay.line}</span>
                         </div>
 
                         <button
                           onClick={() => handleFixDelay(delay.line)}
-                          className="px-2 py-0.5 rounded bg-cyan-900/40 hover:bg-cyan-800 text-cyan-200 border border-cyan-700/60 text-[10px] font-semibold transition-colors"
+                          className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-[10px] font-medium transition-colors"
                         >
                           Auto-Fix with millis()
                         </button>
                       </div>
                     ))
                   )}
+                </div>
+              )}
+
+              {/* Console Tab 4: Live Serial Waveform Plotter */}
+              {consoleTab === "plotter" && (
+                <div className="flex-1 flex flex-col min-h-0 bg-[#090b10] relative">
+                  {/* Plotter Header Bar */}
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-800 bg-[#0e1117] text-xs shrink-0">
+                    {/* Channels legend */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
+                        Telemetry:
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1 text-[11px] text-sky-400 font-mono">
+                          <span className="h-2 w-2 rounded-full bg-sky-400" />
+                          CH1: {plotterData[plotterData.length - 1]?.values[0] ?? "--"}
+                        </span>
+                        <span className="flex items-center gap-1 text-[11px] text-amber-400 font-mono">
+                          <span className="h-2 w-2 rounded-full bg-amber-400" />
+                          CH2: {plotterData[plotterData.length - 1]?.values[1] ?? "--"}
+                        </span>
+                        <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
+                          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                          CH3: {plotterData[plotterData.length - 1]?.values[2] ?? "--"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Plotter Controls */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setIsSimulatingTelemetry(!isSimulatingTelemetry)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors border ${
+                          isSimulatingTelemetry
+                            ? "bg-zinc-800 text-sky-300 border-sky-600/60"
+                            : "bg-zinc-800 text-zinc-400 hover:text-zinc-200 border-zinc-700"
+                        }`}
+                        title="Toggle virtual sinusoidal telemetry generator"
+                      >
+                        {isSimulatingTelemetry ? "Simulating Feed" : "Simulate Stream"}
+                      </button>
+
+                      <button
+                        onClick={() => setIsPlotterPaused(!isPlotterPaused)}
+                        className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700"
+                      >
+                        {isPlotterPaused ? "Resume" : "Pause"}
+                      </button>
+
+                      <button
+                        onClick={() => setPlotterData([])}
+                        className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Canvas Display */}
+                  <div className="flex-1 w-full h-full relative overflow-hidden p-1">
+                    <canvas
+                      ref={plotterCanvasRef}
+                      width={900}
+                      height={160}
+                      className="w-full h-full block rounded border border-zinc-800/80"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1759,48 +2528,72 @@ void loop() {
             Right Collapsible Inspector Pane
            ========================================================================= */}
         {isInspectorOpen && (
-          <div className="w-80 md:w-96 border-l border-zinc-800 bg-[#10141e] flex flex-col shrink-0 overflow-hidden text-xs font-mono select-none">
+          <div className="w-80 md:w-96 border-l border-zinc-800 bg-[#0e1117] flex flex-col shrink-0 overflow-hidden text-xs font-mono select-none">
             {/* Inspector Navigation Tabs */}
-            <div className="flex items-center border-b border-zinc-800 bg-[#0a0d14] px-2 pt-2 gap-1 shrink-0">
+            <div className="grid grid-cols-5 border-b border-zinc-800 bg-[#090b10] p-1 gap-1 shrink-0 text-center">
               <button
                 onClick={() => setInspectorTab("diagnostics")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t text-xs transition-colors border-b-2 ${
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-1 rounded text-[11px] font-medium transition-colors ${
                   inspectorTab === "diagnostics"
-                    ? "border-cyan-400 text-cyan-300 bg-[#10141e] font-bold"
-                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                    ? "bg-zinc-800 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
                 }`}
+                title="Firmware diagnostics"
               >
                 <Activity className="h-3.5 w-3.5" />
-                <span>Diagnostics</span>
-                {analysis.diagnostics.filter((d) => d.type === "warning").length > 0 && (
-                  <span className="ml-1 rounded-full bg-amber-500/20 text-amber-400 px-1.5 py-0.2 text-[10px]">
-                    {analysis.diagnostics.filter((d) => d.type === "warning").length}
-                  </span>
-                )}
+                <span>Diag</span>
               </button>
 
               <button
                 onClick={() => setInspectorTab("pins")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t text-xs transition-colors border-b-2 ${
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-1 rounded text-[11px] font-medium transition-colors ${
                   inspectorTab === "pins"
-                    ? "border-cyan-400 text-cyan-300 bg-[#10141e] font-bold"
-                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                    ? "bg-zinc-800 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
                 }`}
+                title="Hardware pin mapping"
               >
                 <Cpu className="h-3.5 w-3.5" />
-                <span>Pins ({analysis.extractedPins.length})</span>
+                <span>Pins</span>
               </button>
 
               <button
                 onClick={() => setInspectorTab("platformio")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t text-xs transition-colors border-b-2 ${
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-1 rounded text-[11px] font-medium transition-colors ${
                   inspectorTab === "platformio"
-                    ? "border-cyan-400 text-cyan-300 bg-[#10141e] font-bold"
-                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                    ? "bg-zinc-800 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
                 }`}
+                title="Board specs & PlatformIO"
               >
                 <Settings className="h-3.5 w-3.5" />
-                <span>Hardware</span>
+                <span>Board</span>
+              </button>
+
+              <button
+                onClick={() => setInspectorTab("ai")}
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-1 rounded text-[11px] font-medium transition-colors ${
+                  inspectorTab === "ai"
+                    ? "bg-zinc-800 text-sky-300 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                }`}
+                title="AI Copilot"
+              >
+                <Bot className="h-3.5 w-3.5 text-sky-400" />
+                <span>AI</span>
+              </button>
+
+              <button
+                onClick={() => setInspectorTab("libraries")}
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-1 rounded text-[11px] font-medium transition-colors ${
+                  inspectorTab === "libraries"
+                    ? "bg-zinc-800 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                }`}
+                title="Embedded libraries"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span>Libs</span>
               </button>
             </div>
 
@@ -1810,19 +2603,19 @@ void loop() {
               {inspectorTab === "diagnostics" && (
                 <div className="space-y-3">
                   {/* Firmware Health Score Badge */}
-                  <div className="rounded-xl border border-zinc-800 bg-[#141924] p-3 flex items-center justify-between shadow-xs">
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 flex items-center justify-between">
                     <div>
                       <div className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">
                         Firmware Health
                       </div>
-                      <div className="text-lg font-bold text-cyan-300 mt-0.5">
-                        {analysis.blockingDelays.length === 0 ? "100% Optimized" : "Needs Optimization"}
+                      <div className="text-sm font-bold text-zinc-100 mt-0.5">
+                        {analysis.blockingDelays.length === 0 ? "Optimized & Ready" : "Optimization Recommended"}
                       </div>
                       <div className="text-[10px] text-zinc-500 mt-0.5">
                         {analysis.stats.lineCount} lines analyzed deterministically
                       </div>
                     </div>
-                    <div className="h-10 w-10 rounded-full border-2 border-cyan-500/40 flex items-center justify-center bg-cyan-950/40 text-cyan-300 font-bold text-xs">
+                    <div className="h-9 w-9 rounded-md border border-zinc-700 bg-zinc-800 text-zinc-200 font-bold text-xs flex items-center justify-center shadow-xs">
                       {analysis.blockingDelays.length === 0 ? "A+" : "B"}
                     </div>
                   </div>
@@ -1836,29 +2629,23 @@ void loop() {
                       return (
                         <div
                           key={diag.id}
-                          className={`rounded-lg border p-2.5 space-y-1 transition-colors ${
-                            isWarning
-                              ? "border-amber-900/60 bg-amber-950/20 text-amber-200"
-                              : isSuccess
-                              ? "border-emerald-900/60 bg-emerald-950/20 text-emerald-200"
-                              : "border-zinc-800 bg-zinc-900/50 text-zinc-300"
-                          }`}
+                          className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-1"
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-1.5 font-bold text-xs">
+                            <div className="flex items-center gap-1.5 font-medium text-xs text-zinc-200">
                               {isWarning ? (
                                 <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
                               ) : isSuccess ? (
                                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                               ) : (
-                                <Info className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                <Info className="h-3.5 w-3.5 text-sky-400 shrink-0" />
                               )}
                               <span>{diag.title}</span>
                             </div>
                             {diag.line && (
                               <button
                                 onClick={() => handleJumpToLine(diag.line!)}
-                                className="rounded bg-zinc-800/80 hover:bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300 shrink-0 transition-colors cursor-pointer"
+                                className="rounded bg-zinc-800 hover:bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 shrink-0 transition-colors cursor-pointer border border-zinc-700/60"
                                 title="Jump to line in editor"
                               >
                                 Line {diag.line}
@@ -1876,9 +2663,9 @@ void loop() {
                   {/* Detected Libraries */}
                   {analysis.detectedLibraries.length > 0 && (
                     <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-1.5">
-                      <div className="text-zinc-300 font-bold text-[11px] flex items-center gap-1">
-                        <Layers className="h-3.5 w-3.5 text-cyan-400" />
-                        <span>Included Libraries ({analysis.detectedLibraries.length})</span>
+                      <div className="text-zinc-300 font-medium text-[11px] flex items-center gap-1.5">
+                        <Layers className="h-3.5 w-3.5 text-zinc-400" />
+                        <span>Included Headers ({analysis.detectedLibraries.length})</span>
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {analysis.detectedLibraries.map((lib, idx) => (
@@ -1897,13 +2684,13 @@ void loop() {
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5">
                       <div className="text-zinc-500">Lines of Code</div>
-                      <div className="text-base font-bold text-zinc-100 mt-0.5">
+                      <div className="text-sm font-semibold text-zinc-200 mt-0.5">
                         {analysis.stats.lineCount}
                       </div>
                     </div>
                     <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5">
                       <div className="text-zinc-500">Hardware Pins</div>
-                      <div className="text-base font-bold text-cyan-300 mt-0.5">
+                      <div className="text-sm font-semibold text-zinc-200 mt-0.5">
                         {analysis.stats.pinCount}
                       </div>
                     </div>
@@ -1915,18 +2702,18 @@ void loop() {
               {inspectorTab === "pins" && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-zinc-400">
-                    <span className="font-bold text-zinc-200">Hardware Pin Mapping</span>
+                    <span className="font-semibold text-zinc-200 text-xs">Hardware Pin Mapping</span>
                     <button
                       onClick={handleSyncPinsFromCircuit}
-                      className="text-cyan-400 hover:text-cyan-300 text-[10px] font-bold flex items-center gap-1"
+                      className="text-sky-400 hover:text-sky-300 text-[10px] font-medium flex items-center gap-1"
                     >
                       <Layers className="h-3 w-3" />
-                      <span>Sync All</span>
+                      <span>Sync Pins</span>
                     </button>
                   </div>
 
                   <p className="text-[11px] text-zinc-400 leading-normal">
-                    Pins declared in firmware correlated against Circuit Studio wire connections.
+                    Pins declared in code mapped against Circuit Studio wire connections.
                   </p>
 
                   <div className="space-y-2 mt-2">
@@ -1936,7 +2723,6 @@ void loop() {
                       </div>
                     ) : (
                       analysis.extractedPins.map((p, idx) => {
-                        // Check if circuit connection exists
                         const matchingConn = circuitConnections.find(
                           (c: any) =>
                             c.targetPin?.toLowerCase() === p.pin.toLowerCase() ||
@@ -1950,7 +2736,7 @@ void loop() {
                             className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-1.5"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="font-bold text-cyan-300 text-xs">Pin {p.pin}</span>
+                              <span className="font-medium text-zinc-200 text-xs">Pin {p.pin}</span>
                               <button
                                 onClick={() => handleJumpToLine(p.lineNumbers[0])}
                                 className="text-[10px] text-zinc-500 hover:text-zinc-300"
@@ -1960,7 +2746,7 @@ void loop() {
                             </div>
 
                             <div className="text-[10px] text-zinc-400">
-                              Operations: <span className="text-zinc-200">{p.operations.join(" • ")}</span>
+                              Usage: <span className="text-zinc-300">{p.operations.join(" • ")}</span>
                             </div>
 
                             <div className="pt-1 border-t border-zinc-800/80 flex items-center justify-between text-[10px]">
@@ -1988,10 +2774,10 @@ void loop() {
               {inspectorTab === "platformio" && (
                 <div className="space-y-3">
                   {/* Microcontroller Specifications Card */}
-                  <div className="rounded-xl border border-zinc-800 bg-[#141924] p-3 space-y-2 shadow-xs">
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-cyan-300 text-xs">{activeBoard.label}</span>
-                      <span className="text-[10px] text-zinc-500 font-bold px-1.5 py-0.5 rounded bg-zinc-800">
+                      <span className="font-semibold text-zinc-100 text-xs">{activeBoard.label}</span>
+                      <span className="text-[10px] text-zinc-400 font-mono px-1.5 py-0.5 rounded bg-zinc-800">
                         {activeBoard.voltage}
                       </span>
                     </div>
@@ -2018,22 +2804,260 @@ void loop() {
 
                   {/* platformio.ini Preview */}
                   <div className="flex items-center justify-between text-zinc-400">
-                    <span className="font-bold text-zinc-200">platformio.ini Preview</span>
+                    <span className="font-semibold text-zinc-200 text-xs">platformio.ini Preview</span>
                     <button
                       onClick={handleDownloadPlatformIo}
-                      className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 text-[11px]"
+                      className="text-sky-400 hover:text-sky-300 flex items-center gap-1 text-[11px]"
                     >
                       <Download className="h-3 w-3" />
                       <span>Download</span>
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-zinc-400 leading-normal">
-                    Ready configuration for VS Code PlatformIO with telemetry baud rate configured.
-                  </p>
-
-                  <div className="rounded-lg border border-zinc-800 bg-[#080a0f] p-3 overflow-x-auto text-[11px] text-cyan-200 font-mono leading-relaxed whitespace-pre">
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3 overflow-x-auto text-[11px] text-zinc-300 font-mono leading-relaxed whitespace-pre">
                     {generatePlatformIoIni(selectedBoardId, analysis.baudRate || 115200)}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Gemma AI Firmware Copilot */}
+              {inspectorTab === "ai" && (
+                <div className="space-y-3">
+                  {/* Model Header */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                        <Bot className="h-3.5 w-3.5 text-sky-400" />
+                        Gemma AI Copilot
+                      </span>
+                      <span className="rounded bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300 font-mono">
+                        Multi-Key Failover
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-normal">
+                      Intelligent microcontroller code assistant with circuit topology awareness.
+                    </p>
+                  </div>
+
+                  {/* Quick Action 1: Auto-Fix */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-zinc-200 text-xs flex items-center gap-1.5">
+                        <Wrench className="h-3.5 w-3.5 text-zinc-400" />
+                        Auto-Fix & Optimize
+                      </span>
+                      {analysis.blockingDelays.length > 0 && (
+                        <span className="text-[10px] text-amber-400 font-medium">
+                          {analysis.blockingDelays.length} delays
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 leading-normal">
+                      Replaces blocking delay() calls with non-blocking millis() state machines.
+                    </p>
+                    <button
+                      onClick={handleAiFixCode}
+                      disabled={aiLoading}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 text-xs font-medium transition-colors"
+                    >
+                      {aiLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 text-sky-400" />}
+                      <span>Auto-Fix Active Sketch</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Action 2: Generate Drivers from Circuit */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-zinc-200 text-xs flex items-center gap-1.5">
+                        <Cpu className="h-3.5 w-3.5 text-zinc-400" />
+                        Driver Scaffolding
+                      </span>
+                      <span className="text-[10px] text-zinc-500">
+                        {circuitConnections.length} wires connected
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-zinc-400 leading-normal">
+                      Scaffolds sensor/actuator driver routines mapped to Circuit Studio connections.
+                    </p>
+                    <button
+                      onClick={handleAiGenerateDrivers}
+                      disabled={aiLoading}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 text-xs font-medium transition-colors"
+                    >
+                      {aiLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Layers className="h-3 w-3 text-emerald-400" />}
+                      <span>Scaffold Circuit Drivers</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Action 3: Explain Code */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-2">
+                    <span className="font-medium text-zinc-200 text-xs flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-zinc-400" />
+                      Code Architecture Breakdown
+                    </span>
+                    <p className="text-[10px] text-zinc-400 leading-normal">
+                      Explains register manipulation, memory footprint, and loop timing execution.
+                    </p>
+                    <button
+                      onClick={handleAiExplainCode}
+                      disabled={aiLoading}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 text-xs font-medium transition-colors"
+                    >
+                      {aiLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Info className="h-3 w-3 text-amber-400" />}
+                      <span>Explain Code Architecture</span>
+                    </button>
+                  </div>
+
+                  {/* Custom AI Instruction */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-2">
+                    <span className="font-medium text-zinc-200 text-xs flex items-center gap-1.5">
+                      <Bot className="h-3.5 w-3.5 text-sky-400" />
+                      Custom Copilot Prompt
+                    </span>
+                    <textarea
+                      value={aiCustomPrompt}
+                      onChange={(e) => setAiCustomPrompt(e.target.value)}
+                      placeholder="e.g., Add non-blocking debounce for button on GPIO 4, or format telemetry for MQTT..."
+                      className="w-full h-20 bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700 font-mono resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAiGenerateDrivers}
+                        disabled={aiLoading || !aiCustomPrompt.trim()}
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-medium transition-colors shadow-xs"
+                      >
+                        {aiLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                        <span>Generate</span>
+                      </button>
+                      <button
+                        onClick={handleAiExplainCode}
+                        disabled={aiLoading || !aiCustomPrompt.trim()}
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 text-xs font-medium transition-colors"
+                      >
+                        <span>Ask / Explain</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* AI Explanation / Feedback Result Box */}
+                  {aiExplanation && (
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                          AI Output
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(aiExplanation);
+                              alert("Copied explanation!");
+                            }}
+                            className="text-[10px] text-zinc-400 hover:text-white"
+                          >
+                            Copy
+                          </button>
+                          <button
+                            onClick={() => setAiExplanation(null)}
+                            className="text-[10px] text-zinc-500 hover:text-white"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-zinc-300 leading-relaxed font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                        {aiExplanation}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 5: Embedded Library Manager */}
+              {inspectorTab === "libraries" && (
+                <div className="space-y-3">
+                  {/* Library Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+                    <input
+                      type="text"
+                      value={librarySearch}
+                      onChange={(e) => setLibrarySearch(e.target.value)}
+                      placeholder="Search sensors, displays, drivers..."
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded pl-8 pr-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700"
+                    />
+                  </div>
+
+                  {/* Library Catalog List */}
+                  <div className="space-y-2">
+                    {EMBEDDED_LIBRARIES.filter(
+                      (l) =>
+                        l.name.toLowerCase().includes(librarySearch.toLowerCase()) ||
+                        l.category.toLowerCase().includes(librarySearch.toLowerCase()) ||
+                        l.description.toLowerCase().includes(librarySearch.toLowerCase()) ||
+                        l.header.toLowerCase().includes(librarySearch.toLowerCase())
+                    ).map((lib) => {
+                      const isIncluded = activeFile.content.includes(lib.header);
+
+                      return (
+                        <div
+                          key={lib.header}
+                          className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-1.5"
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <div>
+                              <div className="font-semibold text-xs text-zinc-200 flex items-center gap-1.5">
+                                <span>{lib.name}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">
+                                  {lib.category}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-zinc-500">
+                                by {lib.author}
+                              </div>
+                            </div>
+
+                            {isIncluded && (
+                              <span className="rounded bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.5 text-[9px] text-emerald-400 font-medium flex items-center gap-0.5 shrink-0">
+                                <Check className="h-2.5 w-2.5" />
+                                Included
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-zinc-400 leading-normal">
+                            {lib.description}
+                          </p>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
+                            <code className="text-[10px] text-zinc-300 font-mono">
+                              &lt;{lib.header}&gt;
+                            </code>
+
+                            <div className="flex items-center gap-1.5">
+                              {!isIncluded && (
+                                <button
+                                  onClick={() => handleIncludeLibrary(lib)}
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[10px] font-medium transition-colors"
+                                  title="Add #include header to active sketch"
+                                >
+                                  + Include
+                                </button>
+                              )}
+                              {lib.platformio && (
+                                <button
+                                  onClick={() => handleAddLibraryToPlatformIo(lib)}
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-[10px] font-medium transition-colors"
+                                  title="Add to platformio.ini lib_deps"
+                                >
+                                  + PlatformIO
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -2050,7 +3074,7 @@ void loop() {
           <div className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-4 space-y-3 font-mono shadow-2xl">
             <div className="flex items-center justify-between">
               <span className="font-bold text-sm text-zinc-100 flex items-center gap-1.5">
-                <FileCode className="h-4 w-4 text-cyan-400" />
+                <FileCode className="h-4 w-4 text-sky-400" />
                 Create New Firmware File
               </span>
               <button
@@ -2062,7 +3086,7 @@ void loop() {
             </div>
 
             <p className="text-xs text-zinc-400">
-              Enter file name with extension (e.g., <code className="text-cyan-300">sensors.h</code> or <code className="text-cyan-300">driver.cpp</code>):
+              Enter file name with extension (e.g., <code className="text-sky-300">sensors.h</code> or <code className="text-sky-300">driver.cpp</code>):
             </p>
 
             <input
@@ -2074,7 +3098,7 @@ void loop() {
                 if (e.key === "Escape") setShowNewFileModal(false);
               }}
               placeholder="e.g. telemetry.h"
-              className="w-full bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
               autoFocus
             />
 
@@ -2087,9 +3111,90 @@ void loop() {
               </button>
               <button
                 onClick={handleCreateNewFile}
-                className="px-3 py-1.5 rounded text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-xs"
+                className="px-3 py-1.5 rounded text-xs bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-xs"
               >
                 Create File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          Insert Snippets & Code Templates Modal
+         ========================================================================= */}
+      {showSnippetsMenu && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-xl border border-zinc-700 bg-zinc-900 font-mono shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-800 p-4 shrink-0 bg-zinc-900/90">
+              <div className="flex items-center gap-2">
+                <Code2 className="h-4 w-4 text-sky-400" />
+                <span className="font-bold text-sm text-zinc-100">
+                  Insert Firmware Snippet
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  {SNIPPET_TEMPLATES.length} templates
+                </span>
+              </div>
+              <button
+                onClick={() => setShowSnippetsMenu(false)}
+                className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-3 border-b border-zinc-800 bg-[#090b10] shrink-0">
+              <input
+                type="text"
+                value={snippetFilter}
+                onChange={(e) => setSnippetFilter(e.target.value)}
+                placeholder="Search templates (e.g. blink, button, i2c, millis)..."
+                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500 font-mono"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+              {SNIPPET_TEMPLATES.filter(
+                (sn) =>
+                  sn.title.toLowerCase().includes(snippetFilter.toLowerCase()) ||
+                  sn.description.toLowerCase().includes(snippetFilter.toLowerCase())
+              ).map((snippet, idx) => (
+                <div
+                  key={idx}
+                  className="group rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 hover:border-zinc-700 transition flex flex-col gap-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-200 group-hover:text-sky-300">
+                        {snippet.title}
+                      </div>
+                      <div className="text-[11px] text-zinc-400">
+                        {snippet.description}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleInsertSnippet(snippet.code)}
+                      className="px-2.5 py-1 rounded text-xs bg-sky-600/20 text-sky-300 border border-sky-500/30 hover:bg-sky-600 hover:text-white transition shrink-0 font-medium"
+                    >
+                      Insert at Cursor
+                    </button>
+                  </div>
+                  <pre className="max-h-24 overflow-hidden text-[10px] bg-[#090b10] border border-zinc-800/80 rounded p-2 text-zinc-400 select-none">
+                    {snippet.code.slice(0, 180)}...
+                  </pre>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center border-t border-zinc-800 p-3 bg-zinc-900/90 text-[11px] text-zinc-500 shrink-0">
+              <span>Code will be inserted into active file at cursor position.</span>
+              <button
+                onClick={() => setShowSnippetsMenu(false)}
+                className="px-3 py-1 rounded text-xs text-zinc-400 hover:bg-zinc-800"
+              >
+                Close
               </button>
             </div>
           </div>

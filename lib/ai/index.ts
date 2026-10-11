@@ -1,5 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
+import {
+  executeWithKeyRotation,
+  getPrioritizedKeysForFeature,
+  getClientForKey,
+} from "./key-manager";
 
 const TEXT_MODEL = process.env.GEMMA_MODEL || "gemini-3.8-flash";
 const VISION_MODEL = process.env.VISION_MODEL || "gemini-3.8-flash";
@@ -10,19 +15,14 @@ const CANDIDATE_VISION_MODELS = [
   "gemini-2.5-flash",
 ];
 
-let aiClient: GoogleGenAI | null = null;
-
 function getAiClient(): GoogleGenAI {
-  const key = process.env.GEMMA_API_KEY || process.env.GEMINI_API_KEY;
-  if (!key) {
+  const keys = getPrioritizedKeysForFeature("doctor");
+  if (keys.length === 0) {
     throw new Error(
-      "Missing GEMMA_API_KEY in environment variables. Please add GEMMA_API_KEY to your .env file."
+      "Missing GEMMA_API_KEY in environment variables. Please add GEMMA_API_KEY or GEMMA_API_KEY_DOCTOR to your .env file."
     );
   }
-  if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey: key });
-  }
-  return aiClient;
+  return getClientForKey(keys[0].key);
 }
 
 // ========================================================
@@ -128,47 +128,62 @@ Return your analysis strictly as valid JSON adhering to this schema:
 
   // Deduplicate candidate vision models to try in sequence
   const uniqueModels = Array.from(new Set(CANDIDATE_VISION_MODELS));
-  let lastError: Error | null = null;
 
-  for (const model of uniqueModels) {
-    try {
-      const res = await ai.models.generateContent({
-        model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
+  try {
+    return await executeWithKeyRotation("doctor", async (ai, keyEntry) => {
+      let lastError: Error | null = null;
+      for (const model of uniqueModels) {
+        try {
+          const res = await ai.models.generateContent({
+            model,
+            contents: [
               {
-                inlineData: {
-                  mimeType: params.mimeType,
-                  data: params.imageBase64,
-                },
+                role: "user",
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: params.mimeType,
+                      data: params.imageBase64,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        config: {
-          temperature: 0.2,
-        },
-      });
+            config: {
+              temperature: 0.2,
+            },
+          });
 
-      const text = res.text || "";
-      const cleanJson = extractJsonFromMarkdown(text);
-      const parsed = JSON.parse(cleanJson);
-      return CircuitAnalysisResultSchema.parse(parsed);
-    } catch (error: any) {
-      console.warn(`Vision model ${model} failed (${error.message}). Checking next candidate...`);
-      lastError = error;
-      // If it is a 503 high demand or 429 rate limit, immediately try the next model in the pool
-      continue;
-    }
+          const text = res.text || "";
+          const cleanJson = extractJsonFromMarkdown(text);
+          const parsed = JSON.parse(cleanJson);
+          return CircuitAnalysisResultSchema.parse(parsed);
+        } catch (error: any) {
+          console.warn(`Vision model ${model} with key ${keyEntry.source} failed (${error.message}).`);
+          lastError = error;
+          // Re-throw if rate limited so key rotation can fail over to next key
+          const errMsg = String(error?.message || "");
+          if (
+            errMsg.includes("429") ||
+            errMsg.includes("RESOURCE_EXHAUSTED") ||
+            errMsg.includes("quota")
+          ) {
+            throw error;
+          }
+          continue;
+        }
+      }
+      throw lastError || new Error("All vision models failed on current key");
+    });
+  } catch (err: any) {
+    console.warn(
+      "All live vision models or keys temporarily unavailable, generating deterministic engineering diagnosis:",
+      err?.message
+    );
+    // Fallback: Gracefully synthesize deterministic engineering assessment if Google AI Studio is experiencing temporary 503 spikes across all vision models
+    return buildDeterministicCircuitDiagnosis(params);
   }
-
-  console.warn("All live vision models temporarily unavailable, generating deterministic engineering diagnosis:", lastError?.message);
-
-  // Fallback: Gracefully synthesize deterministic engineering assessment if Google AI Studio is experiencing temporary 503 spikes across all vision models
-  return buildDeterministicCircuitDiagnosis(params);
 }
 
 function buildDeterministicCircuitDiagnosis(params: {
@@ -399,30 +414,41 @@ Output strictly valid JSON matching this schema:
 `;
 
   const modelsToTry = [TEXT_MODEL, "gemini-3.8-flash"];
-  let lastError: any = null;
 
-  for (const model of modelsToTry) {
-    try {
-      console.log(`Generating project plan with model: ${model}...`);
-      const res = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          temperature: 0.3,
-        },
-      });
+  return await executeWithKeyRotation("builder", async (ai, keyEntry) => {
+    let lastError: any = null;
 
-      const text = res.text || "";
-      const cleanJson = extractJsonFromMarkdown(text);
-      const parsed = JSON.parse(cleanJson);
-      return ProjectPlanSchema.parse(parsed);
-    } catch (err: any) {
-      console.warn(`Model ${model} failed project generation:`, err.message);
-      lastError = err;
+    for (const model of modelsToTry) {
+      try {
+        console.log(`Generating project plan with model: ${model} (${keyEntry.source})...`);
+        const res = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature: 0.3,
+          },
+        });
+
+        const text = res.text || "";
+        const cleanJson = extractJsonFromMarkdown(text);
+        const parsed = JSON.parse(cleanJson);
+        return ProjectPlanSchema.parse(parsed);
+      } catch (err: any) {
+        console.warn(`Model ${model} with key ${keyEntry.source} failed project generation:`, err.message);
+        lastError = err;
+        const errMsg = String(err?.message || "");
+        if (
+          errMsg.includes("429") ||
+          errMsg.includes("RESOURCE_EXHAUSTED") ||
+          errMsg.includes("quota")
+        ) {
+          throw err;
+        }
+      }
     }
-  }
 
-  throw new Error(`Project Builder generation error: ${lastError?.message || "Failed to generate project"}`);
+    throw new Error(`Project Builder generation error: ${lastError?.message || "Failed to generate project"}`);
+  });
 }
 
 // ========================================================
@@ -435,8 +461,6 @@ export async function generateProjectIdeas(params: {
   board?: string;
   experienceLevel?: string;
 }) {
-  const ai = getAiClient();
-
   const prompt = `
 Generate 4 unique, practical, and exciting hardware project ideas tailored to these constraints:
 - Interests: ${params.interests || "General Electronics & Automation"}
@@ -459,23 +483,33 @@ Return strictly valid JSON:
 ]
 `;
 
-  try {
-    const res = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: { temperature: 0.6 },
-    });
-    const cleanJson = extractJsonFromMarkdown(res.text || "");
-    return JSON.parse(cleanJson);
-  } catch (err: any) {
-    // Try fallback
-    const res = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt,
-      config: { temperature: 0.6 },
-    });
-    return JSON.parse(extractJsonFromMarkdown(res.text || ""));
-  }
+  return await executeWithKeyRotation("builder", async (ai) => {
+    try {
+      const res = await ai.models.generateContent({
+        model: TEXT_MODEL,
+        contents: prompt,
+        config: { temperature: 0.6 },
+      });
+      const cleanJson = extractJsonFromMarkdown(res.text || "");
+      return JSON.parse(cleanJson);
+    } catch (err: any) {
+      const errMsg = String(err?.message || "");
+      if (
+        errMsg.includes("429") ||
+        errMsg.includes("RESOURCE_EXHAUSTED") ||
+        errMsg.includes("quota")
+      ) {
+        throw err;
+      }
+      // Try fallback model
+      const res = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: prompt,
+        config: { temperature: 0.6 },
+      });
+      return JSON.parse(extractJsonFromMarkdown(res.text || ""));
+    }
+  });
 }
 
 // Helper function to extract JSON from model markdown code fence
